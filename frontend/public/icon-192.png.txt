@@ -1,0 +1,3 @@
+# PWA icon placeholder
+# Generate actual icons using: https://realfavicongenerator.net/
+# Or use: npx pwa-asset-generator logo.svg public --icon-only

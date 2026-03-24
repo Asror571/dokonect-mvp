@@ -3,6 +3,7 @@ import { ShoppingCart, Edit, Trash2, Package } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { cn } from '../ui/Button';
+import StarRating from '../reviews/StarRating';
 
 interface Product {
   id: string;
@@ -12,6 +13,8 @@ interface Product {
   stock: number;
   category: string;
   unit: string;
+  avgRating?: number;
+  reviewCount?: number;
   distributor?: { companyName: string };
   distributorId?: string;
   description?: string;
@@ -71,7 +74,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
           <h3 className="font-semibold text-slate-800 text-sm leading-snug line-clamp-2 mb-1.5">
             {product.name}
           </h3>
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap mb-1">
             <Badge variant="secondary">{product.category}</Badge>
             {product.distributor?.companyName && (
               <span className="text-[11px] text-slate-400 font-medium truncate max-w-[100px]">
@@ -79,6 +82,12 @@ const ProductCard: React.FC<ProductCardProps> = ({
               </span>
             )}
           </div>
+          {product.avgRating && product.avgRating > 0 && (
+            <div className="flex items-center gap-1">
+              <StarRating rating={Math.round(product.avgRating)} />
+              <span className="text-xs text-slate-400">({product.reviewCount || 0})</span>
+            </div>
+          )}
         </div>
 
         <div className="flex items-end justify-between mt-auto">

@@ -8,19 +8,24 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  password     String
-  role         Role     @default(STORE_OWNER)
-  createdAt    DateTime @default(now())
+  id          String   @id @default(uuid())
+  email       String   @unique
+  password    String
+  role        Role     @default(STORE_OWNER)
+  isVerified  Boolean  @default(false)
+  isBlocked   Boolean  @default(false)
+  createdAt   DateTime @default(now())
 
-  storeOwner   StoreOwner?
-  distributor  Distributor?
+  storeOwner    StoreOwner?
+  distributor   Distributor?
+  messages      Message[]
+  notifications Notification[]
 }
 
 enum Role {
   STORE_OWNER
   DISTRIBUTOR
+  ADMIN
 }
 
 model StoreOwner {
@@ -31,6 +36,8 @@ model StoreOwner {
   phone     String
   user      User     @relation(fields: [userId], references: [id])
   orders    Order[]
+  reviews   Review[]
+  chatRooms ChatRoom[]
 }
 
 model Distributor {
@@ -39,43 +46,50 @@ model Distributor {
   companyName String
   address     String
   phone       String
+  isVerified  Boolean   @default(false)
+  logoUrl     String?
+  description String?
   user        User      @relation(fields: [userId], references: [id])
   products    Product[]
   orders      Order[]
+  chatRooms   ChatRoom[]
 }
 
 model Product {
-  id             String      @id @default(uuid())
-  distributorId  String
-  name           String
-  description    String?
-  price          Float
-  unit           String      @default("dona")
-  stock          Int         @default(0)
-  category       String
-  imageUrl       String?
-  isActive       Boolean     @default(true)
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  id            String      @id @default(uuid())
+  distributorId String
+  name          String
+  description   String?
+  price         Float
+  unit          String      @default("dona")
+  stock         Int         @default(0)
+  category      String
+  imageUrl      String?
+  isActive      Boolean     @default(true)
+  avgRating     Float       @default(0)
+  reviewCount   Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
-  distributor    Distributor @relation(fields: [distributorId], references: [id])
-  orderItems     OrderItem[]
+  distributor   Distributor @relation(fields: [distributorId], references: [id])
+  orderItems    OrderItem[]
+  reviews       Review[]
 }
 
 model Order {
-  id             String      @id @default(uuid())
-  storeOwnerId   String
-  distributorId  String
-  status         OrderStatus @default(PENDING)
-  totalAmount    Float
-  address        String
-  note           String?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  id            String      @id @default(uuid())
+  storeOwnerId  String
+  distributorId String
+  status        OrderStatus @default(PENDING)
+  totalAmount   Float
+  address       String
+  note          String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
-  storeOwner     StoreOwner  @relation(fields: [storeOwnerId], references: [id])
-  distributor    Distributor @relation(fields: [distributorId], references: [id])
-  items          OrderItem[]
+  storeOwner    StoreOwner  @relation(fields: [storeOwnerId], references: [id])
+  distributor   Distributor @relation(fields: [distributorId], references: [id])
+  items         OrderItem[]
 }
 
 enum OrderStatus {
@@ -95,4 +109,67 @@ model OrderItem {
 
   order     Order   @relation(fields: [orderId], references: [id])
   product   Product @relation(fields: [productId], references: [id])
+}
+
+model Review {
+  id           String     @id @default(uuid())
+  productId    String
+  storeOwnerId String
+  rating       Int
+  comment      String?
+  createdAt    DateTime   @default(now())
+
+  product      Product    @relation(fields: [productId], references: [id])
+  storeOwner   StoreOwner @relation(fields: [storeOwnerId], references: [id])
+
+  @@unique([productId, storeOwnerId])
+}
+
+model ChatRoom {
+  id            String      @id @default(uuid())
+  storeOwnerId  String
+  distributorId String
+  createdAt     DateTime    @default(now())
+  lastMessageAt DateTime    @default(now())
+
+  storeOwner    StoreOwner  @relation(fields: [storeOwnerId], references: [id])
+  distributor   Distributor @relation(fields: [distributorId], references: [id])
+  messages      Message[]
+
+  @@unique([storeOwnerId, distributorId])
+}
+
+model Message {
+  id         String   @id @default(uuid())
+  chatRoomId String
+  senderId   String
+  content    String
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  chatRoom   ChatRoom @relation(fields: [chatRoomId], references: [id])
+  sender     User     @relation(fields: [senderId], references: [id])
+}
+
+model Notification {
+  id        String     @id @default(uuid())
+  userId    String
+  type      NotifType
+  title     String
+  body      String
+  isRead    Boolean    @default(false)
+  metadata  Json?
+  createdAt DateTime   @default(now())
+
+  user      User       @relation(fields: [userId], references: [id])
+}
+
+enum NotifType {
+  ORDER_PLACED
+  ORDER_CONFIRMED
+  ORDER_DELIVERING
+  ORDER_DELIVERED
+  ORDER_CANCELLED
+  NEW_MESSAGE
+  NEW_REVIEW
 }

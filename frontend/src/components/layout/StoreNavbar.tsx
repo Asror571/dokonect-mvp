@@ -1,11 +1,12 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/auth.store';
 import { useCartStore } from '../../store/cart.store';
-import { ShoppingCart, LogOut, LayoutGrid, PackageOpen, Zap } from 'lucide-react';
+import { ShoppingCart, LogOut, LayoutGrid, PackageOpen, Zap, MessageSquare } from 'lucide-react';
 
 const navLinks = [
-  { to: '/catalog', icon: LayoutGrid,  label: 'Katalog' },
-  { to: '/orders',  icon: PackageOpen, label: 'Buyurtmalar' },
+  { to: '/catalog', icon: LayoutGrid,    label: 'Katalog' },
+  { to: '/orders',  icon: PackageOpen,   label: 'Buyurtmalar' },
+  { to: '/chat',    icon: MessageSquare, label: 'Chat' },
 ];
 
 const StoreNavbar = () => {

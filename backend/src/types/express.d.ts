@@ -1,11 +1,14 @@
-import { IUser } from '../models/User';
+import { Role } from '@prisma/client';
 
 declare global {
   namespace Express {
     interface Request {
-      user?: IUser & {
-        storeOwner?: any;
-        distributor?: any;
+      user?: {
+        id: string;
+        email: string;
+        role: Role;
+        isBlocked: boolean;
+        isVerified: boolean;
       };
     }
   }

@@ -1,10 +1,8 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import asyncHandler from 'express-async-handler';
-import { z } from 'zod';
-import User from '../models/User';
-import StoreOwner from '../models/StoreOwner';
-import Distributor from '../models/Distributor';
+import { z } from 'zod/v4';
+import prisma from '../prisma/client';
 import { generateToken } from '../utils/jwt';
 import { sendSuccess, sendError } from '../utils/response';
 
@@ -17,7 +15,6 @@ const registerSchema = z.object({
   phone:    z.string().min(7, 'Telefon raqam kiritilishi shart'),
 });
 
-// POST /api/auth/register
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const result = registerSchema.safeParse(req.body);
   if (!result.success) {
@@ -27,80 +24,67 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
 
   const { email, password, role, name, address, phone } = result.data;
 
-  const existingUser = await User.findOne({ email });
-  if (existingUser) {
-    res.status(400); throw new Error('Bu email bilan avval ro\'yxatdan o\'tilgan');
-  }
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) { res.status(400); throw new Error('Bu email bilan avval ro\'yxatdan o\'tilgan'); }
 
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  const user = await User.create({ email, password: hashedPassword, role });
+  const user = await prisma.user.create({
+    data: {
+      email,
+      password: hashedPassword,
+      role: role as any,
+      ...(role === 'STORE_OWNER'
+        ? { storeOwner: { create: { storeName: name, address, phone } } }
+        : { distributor: { create: { companyName: name, address, phone } } }),
+    },
+  });
 
-  if (role === 'STORE_OWNER') {
-    await StoreOwner.create({ userId: user._id, storeName: name, address, phone });
-  } else {
-    await Distributor.create({ userId: user._id, companyName: name, address, phone });
-  }
-
-  const token = generateToken(user._id.toString(), user.role);
-
-  sendSuccess(res, { id: user._id, email: user.email, role: user.role, name, token },
+  const token = generateToken(user.id, user.role);
+  sendSuccess(res, { id: user.id, email: user.email, role: user.role, name, token },
     'Muvaffaqiyatli ro\'yxatdan o\'tdingiz', 201);
 });
 
-// POST /api/auth/login
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const { email, password } = req.body;
+  if (!email || !password) { res.status(400); throw new Error('Email va parol kiritilishi shart'); }
 
-  if (!email || !password) {
-    res.status(400); throw new Error('Email va parol kiritilishi shart');
-  }
+  const user = await prisma.user.findUnique({
+    where: { email },
+    include: { storeOwner: true, distributor: true },
+  });
 
-  const user = await User.findOne({ email });
-  if (!user) {
-    res.status(401); throw new Error('Email yoki parol noto\'g\'ri');
-  }
+  if (!user) { res.status(401); throw new Error('Email yoki parol noto\'g\'ri'); }
+  if (user.isBlocked) { res.status(403); throw new Error('Hisobingiz bloklangan'); }
 
   const isMatch = await bcrypt.compare(password, user.password);
-  if (!isMatch) {
-    res.status(401); throw new Error('Email yoki parol noto\'g\'ri');
-  }
+  if (!isMatch) { res.status(401); throw new Error('Email yoki parol noto\'g\'ri'); }
 
-  let name: string | undefined;
-  if (user.role === 'STORE_OWNER') {
-    const profile = await StoreOwner.findOne({ userId: user._id });
-    name = profile?.storeName;
-  } else {
-    const profile = await Distributor.findOne({ userId: user._id });
-    name = profile?.companyName;
-  }
-
-  const token = generateToken(user._id.toString(), user.role);
-
-  sendSuccess(res, { id: user._id, email: user.email, role: user.role, name, token },
-    'Muvaffaqiyatli kirdingiz', 200);
-});
-
-// GET /api/auth/me
-export const getMe = asyncHandler(async (req: Request, res: Response) => {
-  if (!req.user) {
-    res.status(401); throw new Error('Avtorizatsiya mavjud emas');
-  }
-
-  let name: string | undefined;
-  if (req.user.role === 'STORE_OWNER') {
-    const profile = await StoreOwner.findOne({ userId: req.user._id });
-    name = profile?.storeName;
-  } else {
-    const profile = await Distributor.findOne({ userId: req.user._id });
-    name = profile?.companyName;
-  }
+  const name = user.storeOwner?.storeName || user.distributor?.companyName || 'Admin';
+  const token = generateToken(user.id, user.role);
 
   sendSuccess(res, {
-    id: req.user._id,
-    email: req.user.email,
-    role: req.user.role,
-    name,
-    createdAt: req.user.createdAt,
+    id: user.id, email: user.email, role: user.role, name,
+    isVerified: user.distributor?.isVerified ?? user.isVerified,
+    token,
+  }, 'Muvaffaqiyatli kirdingiz', 200);
+});
+
+export const getMe = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user) { res.status(401); throw new Error('Avtorizatsiya mavjud emas'); }
+
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    include: { storeOwner: true, distributor: true },
+  });
+
+  if (!user) { res.status(404); throw new Error('Foydalanuvchi topilmadi'); }
+
+  const name = user.storeOwner?.storeName || user.distributor?.companyName || 'Admin';
+
+  sendSuccess(res, {
+    id: user.id, email: user.email, role: user.role, name,
+    isVerified: user.distributor?.isVerified ?? user.isVerified,
+    createdAt: user.createdAt,
   }, 'Foydalanuvchi ma\'lumotlari', 200);
 });

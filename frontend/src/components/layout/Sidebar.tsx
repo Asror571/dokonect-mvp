@@ -1,11 +1,13 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LogOut, PackageSearch, PackagePlus, LayoutList, ClipboardList, UserCircle, Zap } from 'lucide-react';
+import { LogOut, LayoutList, PackagePlus, ClipboardList, UserCircle, Zap, BarChart3, MessageSquare } from 'lucide-react';
 import { useAuthStore } from '../../store/auth.store';
 
 const menuItems = [
   { to: '/distributor/products',     icon: LayoutList,    label: 'Mahsulotlar' },
   { to: '/distributor/products/add', icon: PackagePlus,   label: 'Yangi mahsulot' },
   { to: '/distributor/orders',       icon: ClipboardList, label: 'Buyurtmalar' },
+  { to: '/distributor/analytics',    icon: BarChart3,     label: 'Analytics' },
+  { to: '/distributor/chat',         icon: MessageSquare, label: 'Chat' },
   { to: '/profile',                  icon: UserCircle,    label: 'Profil' },
 ];
 

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchProductsFn, fetchCategoriesFn } from '../../api/product.api';
 import { useCartStore } from '../../store/cart.store';
 import ProductCard from '../../components/products/ProductCard';
+import StarRating from '../../components/reviews/StarRating';
 import { ShoppingBag, Loader2, Search, SlidersHorizontal, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import toast from 'react-hot-toast';
@@ -12,11 +13,20 @@ const LIMIT = 12;
 const CatalogPage = () => {
   const [search, setSearch]     = useState('');
   const [category, setCategory] = useState('');
+  const [minRating, setMinRating] = useState(0);
+  const [sortBy, setSortBy]     = useState('newest');
   const [page, setPage]         = useState(1);
 
   const { data: fetchRes, isLoading } = useQuery({
-    queryKey: ['products', search, category, page],
-    queryFn: () => fetchProductsFn({ search: search || undefined, category: category || undefined, page, limit: LIMIT }),
+    queryKey: ['products', search, category, minRating, sortBy, page],
+    queryFn: () => fetchProductsFn({
+      search: search || undefined,
+      category: category || undefined,
+      minRating: minRating || undefined,
+      sortBy: sortBy as any,
+      page,
+      limit: LIMIT,
+    }),
     placeholderData: (prev) => prev,
   });
 
@@ -36,7 +46,7 @@ const CatalogPage = () => {
     toast.success(`${product.name} savatga qo'shildi`, { icon: '🛍️' });
   };
 
-  const hasFilters = search || category;
+  const hasFilters = search || category || minRating > 0 || sortBy !== 'newest';
 
   return (
     <div className="page fade-in">
@@ -49,45 +59,73 @@ const CatalogPage = () => {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Mahsulot qidirish..."
-            className="w-full pl-9 pr-4 h-10 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 shadow-sm"
-          />
-          {search && (
-            <button onClick={() => { setSearch(''); setPage(1); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-              <X className="w-3.5 h-3.5" />
+      <div className="flex flex-col gap-3 mb-6">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              placeholder="Mahsulot qidirish..."
+              className="w-full pl-9 pr-4 h-10 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 shadow-sm"
+            />
+            {search && (
+              <button onClick={() => { setSearch(''); setPage(1); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <SlidersHorizontal className="w-4 h-4 text-slate-400 shrink-0" />
+            <select
+              value={category}
+              onChange={(e) => { setCategory(e.target.value); setPage(1); }}
+              className="h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 shadow-sm min-w-[160px]"
+            >
+              <option value="">Barcha kategoriyalar</option>
+              {categories.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">Min rating:</span>
+            <StarRating rating={minRating} interactive onChange={(r) => { setMinRating(r); setPage(1); }} />
+            {minRating > 0 && (
+              <button onClick={() => { setMinRating(0); setPage(1); }} className="text-xs text-violet-600 hover:underline">
+                Tozalash
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 ml-auto">
+            <span className="text-xs text-slate-500">Saralash:</span>
+            <select
+              value={sortBy}
+              onChange={(e) => { setSortBy(e.target.value); setPage(1); }}
+              className="h-8 bg-white border border-slate-200 rounded-lg px-2 text-xs focus:outline-none"
+            >
+              <option value="newest">Yangi</option>
+              <option value="popular">Mashhur</option>
+              <option value="price">Narx</option>
+              <option value="rating">Reyting</option>
+            </select>
+          </div>
+
+          {hasFilters && (
+            <button
+              onClick={() => { setSearch(''); setCategory(''); setMinRating(0); setSortBy('newest'); setPage(1); }}
+              className="text-sm text-violet-600 font-medium hover:text-violet-700 whitespace-nowrap"
+            >
+              Barchasini tozalash
             </button>
           )}
         </div>
-
-        <div className="flex items-center gap-2">
-          <SlidersHorizontal className="w-4 h-4 text-slate-400 shrink-0" />
-          <select
-            value={category}
-            onChange={(e) => { setCategory(e.target.value); setPage(1); }}
-            className="h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 shadow-sm min-w-[160px]"
-          >
-            <option value="">Barcha kategoriyalar</option>
-            {categories.map((cat) => (
-              <option key={cat} value={cat}>{cat}</option>
-            ))}
-          </select>
-        </div>
-
-        {hasFilters && (
-          <button
-            onClick={() => { setSearch(''); setCategory(''); setPage(1); }}
-            className="text-sm text-violet-600 font-medium hover:text-violet-700 whitespace-nowrap"
-          >
-            Tozalash
-          </button>
-        )}
       </div>
 
       {/* Content */}
@@ -103,7 +141,7 @@ const CatalogPage = () => {
           </div>
           <p className="text-slate-600 font-medium text-sm">Mahsulotlar topilmadi</p>
           {hasFilters && (
-            <button onClick={() => { setSearch(''); setCategory(''); setPage(1); }} className="text-violet-600 text-sm font-medium hover:underline">
+            <button onClick={() => { setSearch(''); setCategory(''); setMinRating(0); setSortBy('newest'); setPage(1); }} className="text-violet-600 text-sm font-medium hover:underline">
               Filtrlarni tozalash
             </button>
           )}

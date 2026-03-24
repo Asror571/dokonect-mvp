@@ -3,6 +3,13 @@ import api from './api';
 export interface ProductsQuery {
   search?: string;
   category?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  distributorId?: string;
+  minRating?: number;
+  inStock?: boolean;
+  sortBy?: 'price' | 'rating' | 'newest' | 'popular';
+  order?: 'asc' | 'desc';
   page?: number;
   limit?: number;
 }

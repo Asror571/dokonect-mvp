@@ -1,12 +1,9 @@
 import { Request, Response } from 'express';
 import asyncHandler from 'express-async-handler';
-import mongoose from 'mongoose';
-import { z } from 'zod';
-import Order from '../models/Order';
-import Product from '../models/Product';
-import StoreOwner from '../models/StoreOwner';
-import Distributor from '../models/Distributor';
+import { z } from 'zod/v4';
+import prisma from '../prisma/client';
 import { sendSuccess } from '../utils/response';
+import { notifyOrderStatus } from '../services/notification.service';
 
 const createOrderSchema = z.object({
   distributorId: z.string(),
@@ -20,7 +17,7 @@ const createOrderSchema = z.object({
 
 // POST /api/orders
 export const createOrder = asyncHandler(async (req: Request, res: Response) => {
-  const storeOwner = await StoreOwner.findOne({ userId: req.user!._id });
+  const storeOwner = await prisma.storeOwner.findUnique({ where: { userId: req.user!.id } });
   if (!storeOwner) { res.status(403); throw new Error('Do\'kon egasi profili topilmadi'); }
 
   const result = createOrderSchema.safeParse(req.body);
@@ -31,148 +28,149 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
   const { distributorId, address, note, items } = result.data;
 
   let totalAmount = 0;
-  const orderItems = [];
+  const orderItems: { productId: string; quantity: number; price: number }[] = [];
 
   for (const item of items) {
-    const product = await Product.findById(item.productId);
+    const product = await prisma.product.findUnique({ where: { id: item.productId } });
     if (!product || !product.isActive) {
       res.status(404); throw new Error(`Mahsulot topilmadi: ${item.productId}`);
     }
-    if (product.distributorId.toString() !== distributorId) {
+    if (product.distributorId !== distributorId) {
       res.status(400); throw new Error('Mahsulot tanlangan distribyutorga tegishli emas');
     }
     if (product.stock < item.quantity) {
       res.status(400); throw new Error(`${product.name} uchun yetarli stok yo'q`);
     }
     totalAmount += product.price * item.quantity;
-    orderItems.push({ productId: product._id, quantity: item.quantity, price: product.price });
+    orderItems.push({ productId: product.id, quantity: item.quantity, price: product.price });
   }
 
-  // Reduce stock
-  for (const item of orderItems) {
-    await Product.findByIdAndUpdate(item.productId, { $inc: { stock: -item.quantity } });
-  }
-
-  const order = await Order.create({
-    storeOwnerId:  storeOwner._id,
-    distributorId: new mongoose.Types.ObjectId(distributorId),
-    address,
-    note,
-    totalAmount,
-    items: orderItems,
+  const order = await prisma.order.create({
+    data: {
+      storeOwnerId: storeOwner.id,
+      distributorId,
+      address,
+      note,
+      totalAmount,
+      items: { create: orderItems },
+    },
+    include: { items: { include: { product: true } }, distributor: true },
   });
 
-  sendSuccess(res, formatOrder(order), 'Buyurtma qabul qilindi', 201);
+  // Auto-create chat room
+  await prisma.chatRoom.upsert({
+    where: { storeOwnerId_distributorId: { storeOwnerId: storeOwner.id, distributorId } },
+    create: { storeOwnerId: storeOwner.id, distributorId },
+    update: {},
+  });
+
+  sendSuccess(res, order, 'Buyurtma qabul qilindi', 201);
 });
 
 // GET /api/orders
 export const getMyOrders = asyncHandler(async (req: Request, res: Response) => {
-  const storeOwner = await StoreOwner.findOne({ userId: req.user!._id });
+  const storeOwner = await prisma.storeOwner.findUnique({ where: { userId: req.user!.id } });
   if (!storeOwner) { res.status(403); throw new Error('Do\'kon egasi profili topilmadi'); }
 
-  const orders = await Order.find({ storeOwnerId: storeOwner._id })
-    .populate({ path: 'distributorId', select: 'companyName phone' })
-    .populate({ path: 'items.productId', select: 'name imageUrl' })
-    .sort({ createdAt: -1 })
-    .lean();
+  const orders = await prisma.order.findMany({
+    where: { storeOwnerId: storeOwner.id },
+    include: {
+      distributor: { select: { id: true, companyName: true, phone: true } },
+      items: { include: { product: { select: { id: true, name: true, imageUrl: true } } } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
 
-  sendSuccess(res, orders.map(mapOrder), 'Buyurtmalar', 200);
+  sendSuccess(res, orders, 'Buyurtmalar', 200);
 });
 
 // GET /api/orders/:id
 export const getOrderById = asyncHandler(async (req: Request, res: Response) => {
-  const storeOwner = await StoreOwner.findOne({ userId: req.user!._id });
-  const order = await Order.findById(req.params.id)
-    .populate('distributorId', 'companyName phone')
-    .populate('items.productId', 'name imageUrl')
-    .lean();
-
-  if (!order || order.storeOwnerId.toString() !== storeOwner?._id.toString()) {
-    res.status(404); throw new Error('Buyurtma topilmadi');
-  }
-  sendSuccess(res, mapOrder(order), 'Buyurtma', 200);
+  const orderId = String(req.params.id);
+  const storeOwner = await prisma.storeOwner.findUnique({ where: { userId: req.user!.id } });
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, storeOwnerId: storeOwner?.id },
+    include: {
+      distributor: { select: { id: true, companyName: true, phone: true } },
+      items: { include: { product: true } },
+    },
+  });
+  if (!order) { res.status(404); throw new Error('Buyurtma topilmadi'); }
+  sendSuccess(res, order, 'Buyurtma', 200);
 });
 
 // GET /api/distributor/orders
 export const getDistributorOrders = asyncHandler(async (req: Request, res: Response) => {
-  const dist = await Distributor.findOne({ userId: req.user!._id });
+  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.id } });
   if (!dist) { res.status(403); throw new Error('Distribyutor profili topilmadi'); }
 
-  const orders = await Order.find({ distributorId: dist._id })
-    .populate({ path: 'storeOwnerId', select: 'storeName phone' })
-    .populate({ path: 'items.productId', select: 'name imageUrl' })
-    .sort({ createdAt: -1 })
-    .lean();
+  const orders = await prisma.order.findMany({
+    where: { distributorId: dist.id },
+    include: {
+      storeOwner: { select: { id: true, storeName: true, phone: true } },
+      items: { include: { product: { select: { id: true, name: true, imageUrl: true } } } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
 
-  sendSuccess(res, orders.map(mapDistOrder), 'Buyurtmalar', 200);
+  sendSuccess(res, orders, 'Buyurtmalar', 200);
 });
 
 // GET /api/distributor/orders/:id
 export const getDistributorOrderById = asyncHandler(async (req: Request, res: Response) => {
-  const dist = await Distributor.findOne({ userId: req.user!._id });
-  const order = await Order.findById(req.params.id)
-    .populate('storeOwnerId', 'storeName phone')
-    .populate('items.productId', 'name imageUrl')
-    .lean();
-
-  if (!order || order.distributorId.toString() !== dist?._id.toString()) {
-    res.status(404); throw new Error('Buyurtma topilmadi');
-  }
-  sendSuccess(res, mapDistOrder(order), 'Buyurtma', 200);
+  const orderId = String(req.params.id);
+  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.id } });
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, distributorId: dist?.id },
+    include: {
+      storeOwner: { select: { id: true, storeName: true, phone: true } },
+      items: { include: { product: true } },
+    },
+  });
+  if (!order) { res.status(404); throw new Error('Buyurtma topilmadi'); }
+  sendSuccess(res, order, 'Buyurtma', 200);
 });
 
 // PATCH /api/distributor/orders/:id/status
 export const updateOrderStatus = asyncHandler(async (req: Request, res: Response) => {
+  const orderId = String(req.params.id);
   const { status } = req.body;
   if (!status) { res.status(400); throw new Error('Status kiritilishi shart'); }
 
-  const dist = await Distributor.findOne({ userId: req.user!._id });
+  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.id } });
   if (!dist) { res.status(403); throw new Error('Distribyutor profili topilmadi'); }
 
-  const order = await Order.findOne({ _id: req.params.id, distributorId: dist._id });
+  const order = await prisma.order.findFirst({ where: { id: orderId, distributorId: dist.id } });
   if (!order) { res.status(404); throw new Error('Buyurtma topilmadi'); }
+  if (order.status === 'DELIVERED') { res.status(400); throw new Error('Yetkazilgan buyurtmani o\'zgartirib bo\'lmaydi'); }
 
-  // Restore stock on cancel
+  // Stock logic
+  if (status === 'CONFIRMED' && order.status === 'PENDING') {
+    const items = await prisma.orderItem.findMany({ where: { orderId: order.id } });
+    for (const item of items) {
+      await prisma.product.update({
+        where: { id: item.productId },
+        data: { stock: { decrement: item.quantity } },
+      });
+    }
+  }
   if (status === 'CANCELLED' && order.status !== 'CANCELLED') {
-    for (const item of order.items) {
-      await Product.findByIdAndUpdate(item.productId, { $inc: { stock: item.quantity } });
+    const items = await prisma.orderItem.findMany({ where: { orderId: order.id } });
+    for (const item of items) {
+      await prisma.product.update({
+        where: { id: item.productId },
+        data: { stock: { increment: item.quantity } },
+      });
     }
   }
 
-  order.status = status;
-  await order.save();
-  sendSuccess(res, formatOrder(order), 'Holat yangilandi', 200);
+  const updated = await prisma.order.update({
+    where: { id: order.id },
+    data: { status: status as any },
+    include: { items: { include: { product: true } } },
+  });
+
+  await notifyOrderStatus(order.id, status, order.storeOwnerId, dist.userId);
+
+  sendSuccess(res, updated, 'Holat yangilandi', 200);
 });
-
-// Helpers — map _id to id, rename refs for frontend
-function formatOrder(order: any) {
-  return { ...order.toObject?.() ?? order, id: order._id };
-}
-
-function mapOrder(order: any) {
-  return {
-    ...order,
-    id:          order._id,
-    distributor: order.distributorId,
-    items: (order.items || []).map((item: any) => ({
-      ...item,
-      id:      item._id,
-      product: item.productId,
-      price:   item.price,
-    })),
-  };
-}
-
-function mapDistOrder(order: any) {
-  return {
-    ...order,
-    id:         order._id,
-    storeOwner: order.storeOwnerId,
-    items: (order.items || []).map((item: any) => ({
-      ...item,
-      id:      item._id,
-      product: item.productId,
-      price:   item.price,
-    })),
-  };
-}

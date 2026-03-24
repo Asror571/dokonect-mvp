@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import User, { IUser } from '../models/User';
+import prisma from '../prisma/client';
 import { sendError } from '../utils/response';
 
 interface DecodedToken {
@@ -8,19 +8,9 @@ interface DecodedToken {
   role: string;
 }
 
-// Extend Express Request
-declare global {
-  namespace Express {
-    interface Request {
-      user?: IUser & { storeOwner?: any; distributor?: any };
-    }
-  }
-}
-
 export const protect = async (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (!authHeader?.startsWith('Bearer ')) {
     return sendError(res, 'Token taqdim etilmagan', 401);
   }
 
@@ -28,10 +18,13 @@ export const protect = async (req: Request, res: Response, next: NextFunction) =
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as DecodedToken;
 
-    const user = await User.findById(decoded.id).select('-password');
-    if (!user) {
-      return sendError(res, 'Foydalanuvchi topilmadi', 401);
-    }
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      select: { id: true, email: true, role: true, isBlocked: true, isVerified: true },
+    });
+
+    if (!user) return sendError(res, 'Foydalanuvchi topilmadi', 401);
+    if (user.isBlocked) return sendError(res, 'Hisobingiz bloklangan', 403);
 
     req.user = user as any;
     next();

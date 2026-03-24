@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-interface User {
+export interface User {
   id: string;
   email: string;
-  role: 'STORE_OWNER' | 'DISTRIBUTOR';
+  role: 'STORE_OWNER' | 'DISTRIBUTOR' | 'ADMIN';
   name?: string;
+  isVerified?: boolean;
 }
 
 interface AuthState {
@@ -20,11 +21,15 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       token: null,
-      setAuth: (user, token) => set({ user, token }),
-      logout: () => set({ user: null, token: null }),
+      setAuth: (user, token) => {
+        localStorage.setItem('token', token);
+        set({ user, token });
+      },
+      logout: () => {
+        localStorage.removeItem('token');
+        set({ user: null, token: null });
+      },
     }),
-    {
-      name: 'auth-storage',
-    }
+    { name: 'auth-storage' }
   )
 );
