@@ -1,119 +1,143 @@
 import { Request, Response } from 'express';
-import asyncHandler from 'express-async-handler';
-import prisma from '../prisma/client';
-import { sendSuccess } from '../utils/response';
+import { PrismaClient } from '@prisma/client';
 
-// GET /api/admin/users
-export const getUsers = asyncHandler(async (req: Request, res: Response) => {
-  const role  = (req.query.role as string) || '';
-  const page  = parseInt(req.query.page as string) || 1;
-  const limit = 20;
-  const skip  = (page - 1) * limit;
+const prisma = new PrismaClient();
 
+export const getDashboardStats = async (req: Request, res: Response) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const [
+    totalOrders,
+    todayOrders,
+    yesterdayOrders,
+    revenue,
+    todayRevenue,
+    yesterdayRevenue,
+    activeDrivers,
+    pendingDeliveries,
+  ] = await Promise.all([
+    prisma.order.count(),
+    prisma.order.count({ where: { createdAt: { gte: today } } }),
+    prisma.order.count({ where: { createdAt: { gte: yesterday, lt: today } } }),
+    prisma.order.aggregate({ _sum: { totalAmount: true } }),
+    prisma.order.aggregate({
+      where: { createdAt: { gte: today } },
+      _sum: { totalAmount: true },
+    }),
+    prisma.order.aggregate({
+      where: { createdAt: { gte: yesterday, lt: today } },
+      _sum: { totalAmount: true },
+    }),
+    prisma.driver.count({ where: { isOnline: true } }),
+    prisma.order.count({
+      where: { status: { in: ['NEW', 'ACCEPTED', 'IN_TRANSIT'] } },
+    }),
+  ]);
+
+  const ordersTrend = yesterdayOrders > 0
+    ? ((todayOrders - yesterdayOrders) / yesterdayOrders) * 100
+    : 0;
+
+  const yesterdayRevenueSum = yesterdayRevenue._sum.totalAmount || 0;
+  const todayRevenueSum = todayRevenue._sum.totalAmount || 0;
+
+  const revenueTrend = yesterdayRevenueSum > 0
+    ? ((todayRevenueSum - yesterdayRevenueSum) / yesterdayRevenueSum) * 100
+    : 0;
+
+  res.json({
+    totalOrders,
+    ordersTrend: Math.round(ordersTrend),
+    revenue: revenue._sum.totalAmount || 0,
+    revenueTrend: Math.round(revenueTrend),
+    activeDrivers,
+    pendingDeliveries,
+  });
+};
+
+export const getRecentOrders = async (req: Request, res: Response) => {
+  const { status } = req.query;
+  
   const where: any = {};
-  if (role) where.role = role;
+  if (status && status !== 'ALL') {
+    where.status = status;
+  }
 
-  const [users, total] = await Promise.all([
-    prisma.user.findMany({
-      where,
-      select: {
-        id: true, email: true, role: true, isBlocked: true, isVerified: true, createdAt: true,
-        storeOwner: { select: { storeName: true, phone: true, address: true } },
-        distributor: { select: { companyName: true, phone: true, isVerified: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: limit,
-    }),
-    prisma.user.count({ where }),
-  ]);
+  const orders = await prisma.order.findMany({
+    where,
+    take: status ? undefined : 10,
+    orderBy: { createdAt: 'desc' },
+    include: {
+      client: { include: { user: true } },
+      distributor: true,
+      driver: { include: { user: true } },
+      items: { include: { product: true } },
+    },
+  });
 
-  sendSuccess(res, { users, total, page }, 'Foydalanuvchilar', 200);
-});
+  res.json(orders);
+};
 
-// PATCH /api/admin/users/:id/block
-export const blockUser = asyncHandler(async (req: Request, res: Response) => {
+export const getActiveDrivers = async (req: Request, res: Response) => {
+  const drivers = await prisma.driver.findMany({
+    where: { isOnline: true },
+    include: { user: true },
+    orderBy: { rating: 'desc' },
+  });
+
+  res.json(drivers);
+};
+
+export const getAllUsers = async (req: Request, res: Response) => {
+  const users = await prisma.user.findMany({
+    include: {
+      client: true,
+      distributor: true,
+      driver: true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  res.json(users);
+};
+
+export const updateUserStatus = async (req: Request, res: Response) => {
+  const { userId } = req.params;
+  const { status } = req.body;
+
   const user = await prisma.user.update({
-    where: { id: req.params.id },
-    data: { isBlocked: true },
-    select: { id: true, email: true, isBlocked: true },
+    where: { id: userId as string },
+    data: { status },
   });
-  sendSuccess(res, user, 'Foydalanuvchi bloklandi', 200);
-});
 
-// PATCH /api/admin/users/:id/unblock
-export const unblockUser = asyncHandler(async (req: Request, res: Response) => {
-  const user = await prisma.user.update({
-    where: { id: req.params.id },
-    data: { isBlocked: false },
-    select: { id: true, email: true, isBlocked: true },
+  res.json(user);
+};
+
+export const getAnalytics = async (req: Request, res: Response) => {
+  const { period = '7d' } = req.query;
+  
+  const days = period === '30d' ? 30 : period === '7d' ? 7 : 1;
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+
+  const orders = await prisma.order.findMany({
+    where: { createdAt: { gte: startDate } },
+    include: { items: true },
   });
-  sendSuccess(res, user, 'Foydalanuvchi blokdan chiqarildi', 200);
-});
 
-// PATCH /api/admin/distributors/:id/verify
-export const verifyDistributor = asyncHandler(async (req: Request, res: Response) => {
-  const dist = await prisma.distributor.update({
-    where: { id: req.params.id },
-    data: { isVerified: true },
-    select: { id: true, companyName: true, isVerified: true },
+  const revenueByDay = orders.reduce((acc: any, order) => {
+    const date = order.createdAt.toISOString().split('T')[0];
+    acc[date] = (acc[date] || 0) + order.totalAmount;
+    return acc;
+  }, {});
+
+  res.json({
+    revenueByDay,
+    totalOrders: orders.length,
+    totalRevenue: orders.reduce((sum, o) => sum + o.totalAmount, 0),
   });
-  sendSuccess(res, dist, 'Distribyutor tasdiqlandi', 200);
-});
-
-// GET /api/admin/products
-export const getAdminProducts = asyncHandler(async (req: Request, res: Response) => {
-  const page  = parseInt(req.query.page as string) || 1;
-  const limit = 20;
-  const skip  = (page - 1) * limit;
-
-  const [products, total] = await Promise.all([
-    prisma.product.findMany({
-      include: { distributor: { select: { companyName: true } } },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: limit,
-    }),
-    prisma.product.count(),
-  ]);
-
-  sendSuccess(res, { products, total, page }, 'Mahsulotlar', 200);
-});
-
-// PATCH /api/admin/products/:id/deactivate
-export const deactivateProduct = asyncHandler(async (req: Request, res: Response) => {
-  const product = await prisma.product.update({
-    where: { id: req.params.id },
-    data: { isActive: false },
-    select: { id: true, name: true, isActive: true },
-  });
-  sendSuccess(res, product, 'Mahsulot deaktiv qilindi', 200);
-});
-
-// GET /api/admin/orders
-export const getAdminOrders = asyncHandler(async (req: Request, res: Response) => {
-  const status = (req.query.status as string) || '';
-  const page   = parseInt(req.query.page as string) || 1;
-  const limit  = 20;
-  const skip   = (page - 1) * limit;
-
-  const where: any = {};
-  if (status) where.status = status;
-
-  const [orders, total] = await Promise.all([
-    prisma.order.findMany({
-      where,
-      include: {
-        storeOwner: { select: { storeName: true } },
-        distributor: { select: { companyName: true } },
-        items: { include: { product: { select: { name: true } } } },
-      },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: limit,
-    }),
-    prisma.order.count({ where }),
-  ]);
-
-  sendSuccess(res, { orders, total, page }, 'Buyurtmalar', 200);
-});
+};

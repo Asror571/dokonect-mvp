@@ -16,32 +16,37 @@ export async function createNotification(
 export async function notifyOrderStatus(
   orderId: string,
   status: string,
-  storeOwnerId: string,
+  clientId: string,
   distributorUserId: string
 ) {
   const typeMap: Record<string, NotifType> = {
-    CONFIRMED:  'ORDER_CONFIRMED',
-    DELIVERING: 'ORDER_DELIVERING',
+    ACCEPTED:   'ORDER_ACCEPTED',
+    IN_TRANSIT: 'ORDER_STATUS_UPDATE',
     DELIVERED:  'ORDER_DELIVERED',
     CANCELLED:  'ORDER_CANCELLED',
+    REJECTED:   'ORDER_REJECTED',
   };
   const titleMap: Record<string, string> = {
-    CONFIRMED:  'Buyurtma tasdiqlandi',
-    DELIVERING: 'Buyurtma yetkazilmoqda',
+    ACCEPTED:   'Buyurtma qabul qilindi',
+    IN_TRANSIT: 'Buyurtma yo\'lda',
     DELIVERED:  'Buyurtma yetkazildi',
     CANCELLED:  'Buyurtma bekor qilindi',
+    REJECTED:   'Buyurtma rad etildi',
   };
 
   const notifType = typeMap[status];
   if (!notifType) return;
 
-  // Notify store owner
-  const storeOwner = await prisma.storeOwner.findUnique({ where: { id: storeOwnerId } });
-  if (storeOwner) {
+  // Notify client
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    include: { user: true }
+  });
+  if (client) {
     await createNotification(
-      storeOwner.userId,
+      client.userId,
       notifType,
-      titleMap[status],
+      titleMap[status] || `Buyurtma ${status}`,
       `Buyurtma #${orderId.slice(-6)} holati: ${status}`,
       { orderId }
     );

@@ -1,104 +1,89 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { fetchDistributorProductsFn, deleteProductFn } from '../../api/product.api';
-import ProductCard from '../../components/products/ProductCard';
-import { PackagePlus, Loader2, Package, Trash2 } from 'lucide-react';
-import { Button } from '../../components/ui/Button';
-import { Modal } from '../../components/ui/Modal';
+import { Plus, Search } from 'lucide-react';
+import { ProductCard } from '../../components/ui/ProductCard';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../../services/api';
 import toast from 'react-hot-toast';
 
-const ProductsPage = () => {
+export const ProductsPage: React.FC = () => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const navigate    = useNavigate();
-  const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const { data: fetchRes, isLoading } = useQuery({
+  const { data: response } = useQuery({
     queryKey: ['distributor-products'],
-    queryFn: fetchDistributorProductsFn,
+    queryFn: () => api.get('/distributor/products').then(res => res.data),
   });
 
-  const { mutate: deleteProduct, isPending: isDeleting } = useMutation({
-    mutationFn: deleteProductFn,
+  const { mutate: deleteProduct } = useMutation({
+    mutationFn: (id: string) => api.delete(`/distributor/products/${id}`),
     onSuccess: () => {
-      toast.success("Mahsulot o'chirildi");
+      toast.success('Mahsulot o\'chirildi');
       queryClient.invalidateQueries({ queryKey: ['distributor-products'] });
-      setDeleteId(null);
     },
-    onError: () => {
-      toast.error("O'chirishda xatolik");
-      setDeleteId(null);
-    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || 'O\'chirishda xatolik yuz berdi');
+    }
   });
 
-  const products = fetchRes?.data || [];
+  const products = response?.data?.products || [];
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
-        <Loader2 className="w-7 h-7 animate-spin text-violet-600" />
-        <p className="text-slate-400 text-sm">Yuklanmoqda...</p>
-      </div>
-    );
-  }
+  const filteredProducts = products.filter((p: any) =>
+    p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    p.sku.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
-    <div className="fade-in">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">Mahsulotlar</h1>
-          <p className="text-slate-500 text-sm mt-0.5">{products.length} ta mahsulot</p>
+    <div className="min-h-screen bg-gray-50">
+      <div className="bg-white border-b border-gray-200 px-8 py-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Products & Inventory</h1>
+            <p className="text-gray-600 mt-1">Manage your product catalog</p>
+          </div>
+          <button
+            onClick={() => navigate('/distributor/products/add')}
+            className="flex items-center gap-2 px-4 py-2 bg-sky-500 text-white rounded-lg hover:bg-sky-600 transition-colors font-medium"
+          >
+            <Plus className="w-5 h-5" />
+            Add Product
+          </button>
         </div>
-        <Button onClick={() => navigate('/distributor/products/add')} size="sm">
-          <PackagePlus className="w-4 h-4 mr-1.5" />
-          Yangi mahsulot
-        </Button>
       </div>
 
-      {products.length === 0 ? (
-        <div className="flex flex-col items-center justify-center min-h-[50vh] bg-white rounded-2xl border border-dashed border-slate-300 gap-3">
-          <div className="w-14 h-14 bg-violet-50 rounded-2xl flex items-center justify-center">
-            <Package className="w-7 h-7 text-violet-400" />
+      <div className="p-8">
+        {/* Search Bar */}
+        <div className="mb-6">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search products by name or SKU..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
           </div>
-          <p className="text-slate-600 font-medium text-sm">Mahsulotlar yo'q</p>
-          <p className="text-slate-400 text-xs">Birinchi mahsulotingizni qo'shing</p>
-          <Button size="sm" variant="outline" onClick={() => navigate('/distributor/products/add')} className="mt-1">
-            Mahsulot qo'shish
-          </Button>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {products.map((product: any) => (
-            <ProductCard
-              key={product.id}
-              product={product}
-              type="DISTRIBUTOR"
-              onEdit={(p) => navigate(`/distributor/products/add?edit=${p.id}`, { state: p })}
-              onDelete={(p) => setDeleteId(p.id)}
+
+        {/* Products Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {filteredProducts?.map((product: any) => (
+            <ProductCard 
+              key={product.id} 
+              product={product} 
+              onDelete={deleteProduct}
             />
           ))}
         </div>
-      )}
 
-      <Modal isOpen={!!deleteId} onClose={() => setDeleteId(null)} title="Mahsulotni o'chirish">
-        <div className="text-center py-2">
-          <div className="w-12 h-12 bg-red-50 rounded-xl flex items-center justify-center mx-auto mb-4">
-            <Trash2 className="w-6 h-6 text-red-500" />
+        {filteredProducts?.length === 0 && (
+          <div className="text-center py-12 text-gray-500">
+            No products found
           </div>
-          <p className="text-slate-700 font-medium mb-1">Haqiqatan ham o'chirasizmi?</p>
-          <p className="text-slate-400 text-sm mb-6">Bu amalni ortga qaytarib bo'lmaydi.</p>
-          <div className="flex gap-3">
-            <Button variant="secondary" className="flex-1" onClick={() => setDeleteId(null)}>
-              Bekor qilish
-            </Button>
-            <Button variant="danger" className="flex-1" onClick={() => deleteId && deleteProduct(deleteId)} isLoading={isDeleting}>
-              O'chirish
-            </Button>
-          </div>
-        </div>
-      </Modal>
+        )}
+      </div>
     </div>
   );
 };
-
-export default ProductsPage;

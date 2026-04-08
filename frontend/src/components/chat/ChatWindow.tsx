@@ -15,7 +15,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ room }) => {
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const name = user?.role === 'STORE_OWNER'
+  const name = user?.role === 'CLIENT'
     ? room.distributor?.companyName
     : room.storeOwner?.storeName;
 

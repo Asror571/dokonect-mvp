@@ -8,7 +8,7 @@ export interface ProductsQuery {
   distributorId?: string;
   minRating?: number;
   inStock?: boolean;
-  sortBy?: 'price' | 'rating' | 'newest' | 'popular';
+  sortBy?: 'price' | 'rating' | 'newest' | 'popular' | 'price_asc' | 'price_desc';
   order?: 'asc' | 'desc';
   page?: number;
   limit?: number;
@@ -16,17 +16,22 @@ export interface ProductsQuery {
 
 export const fetchProductsFn = async (params: ProductsQuery = {}) => {
   const response = await api.get('/products', { params });
-  return response.data;
+  return response.data.data;
 };
 
 export const fetchCategoriesFn = async () => {
   const response = await api.get('/products/categories');
-  return response.data;
+  return response.data.data;
+};
+
+export const fetchStoreCatalogFn = async (params: ProductsQuery = {}) => {
+  const response = await api.get('/client/products', { params });
+  return response.data.data;
 };
 
 export const fetchProductByIdFn = async (id: string) => {
   const response = await api.get(`/products/${id}`);
-  return response.data;
+  return response.data.data;
 };
 
 // Distributor Only

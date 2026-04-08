@@ -1,34 +1,77 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import prisma from '../prisma/client';
-import { sendError } from '../utils/response';
+import { PrismaClient } from '@prisma/client';
 
-interface DecodedToken {
-  id: string;
+const prisma = new PrismaClient();
+
+interface JwtPayload {
+  userId: string;
   role: string;
 }
 
-export const protect = async (req: Request, res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
-    return sendError(res, 'Token taqdim etilmagan', 401);
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        userId: string;
+        role: string;
+        clientId?: string;
+        distributorId?: string;
+        driverId?: string;
+      };
+    }
   }
+}
 
+export const authenticate = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as DecodedToken;
+    const token = req.headers.authorization?.replace('Bearer ', '');
+
+    if (!token) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || 'your-secret-key'
+    ) as JwtPayload;
 
     const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-      select: { id: true, email: true, role: true, isBlocked: true, isVerified: true },
+      where: { id: decoded.userId },
+      include: {
+        client: true,
+        distributor: true,
+        driver: true,
+      },
     });
 
-    if (!user) return sendError(res, 'Foydalanuvchi topilmadi', 401);
-    if (user.isBlocked) return sendError(res, 'Hisobingiz bloklangan', 403);
+    if (!user || user.status !== 'ACTIVE') {
+      return res.status(401).json({ error: 'Invalid or inactive user' });
+    }
 
-    req.user = user as any;
+    req.user = {
+      userId: user.id,
+      role: user.role,
+      clientId: user.client?.id,
+      distributorId: user.distributor?.id,
+      driverId: user.driver?.id,
+    };
+
     next();
-  } catch {
-    return sendError(res, 'Token yaroqsiz', 401);
+  } catch (error) {
+    res.status(401).json({ error: 'Invalid token' });
   }
+};
+
+export const authorize = (roles: string[]) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    next();
+  };
 };

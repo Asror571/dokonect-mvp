@@ -1,124 +1,219 @@
-import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { useMutation } from '@tanstack/react-query';
-import { Mail, Lock, Zap, ArrowRight } from 'lucide-react';
-import { loginFn } from '../../api/auth.api';
-import { useAuthStore } from '../../store/auth.store';
-import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Input';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { Mail, Lock, Phone, Zap } from 'lucide-react';
+import { api } from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 
-const loginSchema = z.object({
-  email: z.string().email("Noto'g'ri email formati"),
-  password: z.string().min(6, 'Parol kamida 6 belgi'),
-});
-type LoginForm = z.infer<typeof loginSchema>;
-
-const LoginPage = () => {
+export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const setAuth = useAuthStore((s) => s.setAuth);
+  const { setAuth } = useAuthStore();
+  const [loginType, setLoginType] = useState<'email' | 'phone'>('phone');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
-    resolver: zodResolver(loginSchema),
-  });
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
 
-  const { mutate, isPending } = useMutation({
-    mutationFn: loginFn,
-    onSuccess: (data) => {
-      setAuth({ id: data.data.id, email: data.data.email, role: data.data.role, name: data.data.name }, data.data.token);
+    try {
+      console.log('🔐 Attempting login...', { phone, email, loginType });
+      
+      const response = await api.post('/auth/login', {
+        ...(loginType === 'email' ? { email } : { phone }),
+        password,
+      });
+
+      console.log('✅ Login response:', response.data);
+
+      const { user, accessToken, refreshToken } = response.data.data;
+      
+      console.log('👤 User:', user);
+      console.log('🔑 Token:', accessToken?.substring(0, 20) + '...');
+      
+      // Update Global State
+      setAuth(user, accessToken, refreshToken);
+
+      console.log('💾 Auth state updated');
+      console.log('📦 localStorage check:', {
+        token: localStorage.getItem('accessToken')?.substring(0, 20) + '...',
+        user: localStorage.getItem('user') ? 'saved' : 'missing',
+        authStore: localStorage.getItem('auth-storage') ? 'saved' : 'missing'
+      });
+
       toast.success('Xush kelibsiz!');
-      navigate(data.data.role === 'STORE_OWNER' ? '/catalog' : '/distributor/products');
-    },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || 'Email yoki parol noto\'g\'ri');
-    },
-  });
+
+      // Redirect based on role
+      console.log('🚀 Redirecting to:', user.role);
+      
+      let redirectPath = '/';
+      if (user.role === 'DISTRIBUTOR') {
+        redirectPath = '/distributor/dashboard';
+      } else if (user.role === 'CLIENT') {
+        redirectPath = '/store/dashboard';
+      } else if (user.role === 'DRIVER') {
+        redirectPath = '/driver/dashboard';
+      } else if (user.role === 'ADMIN') {
+        redirectPath = '/admin/dashboard';
+      }
+      
+      console.log('🎯 Navigating to:', redirectPath);
+      
+      // Force immediate redirect with location.replace
+      window.location.replace(redirectPath);
+    } catch (error: any) {
+      console.error('❌ Login error:', error);
+      toast.error(error.response?.data?.message || 'Login xatosi');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen flex">
-      {/* Left panel */}
-      <div className="hidden lg:flex lg:w-1/2 bg-slate-900 flex-col justify-between p-12 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-violet-900/40 to-slate-900" />
-        <div className="relative z-10">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-violet-600 rounded-lg flex items-center justify-center">
-              <Zap className="w-4 h-4 text-white" />
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 relative overflow-hidden font-sans">
+      {/* Background Orbs */}
+      <div className="absolute top-1/4 -left-20 w-80 h-80 bg-indigo-600/20 blur-[120px] rounded-full" />
+      <div className="absolute bottom-1/4 -right-20 w-80 h-80 bg-sky-600/20 blur-[120px] rounded-full" />
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-[32px] p-8 w-full max-w-md shadow-2xl relative z-10"
+      >
+        {/* Logo */}
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-indigo-600 rounded-3xl mb-6 shadow-2xl shadow-indigo-600/20 transform -rotate-6">
+            <Zap className="w-10 h-10 text-white fill-white" />
+          </div>
+          <h1 className="text-3xl font-black text-white tracking-tighter">Doko<span className="text-indigo-400">nect</span></h1>
+          <p className="text-slate-400 mt-2 font-medium">B2B Platformaning kelajagi</p>
+        </div>
+
+        {/* Login Type Toggle */}
+        <div className="flex p-1 bg-white/5 rounded-2xl mb-8 border border-white/5">
+          <button
+            type="button"
+            onClick={() => setLoginType('phone')}
+            className={`flex-1 py-4 px-4 rounded-xl text-sm font-bold transition-all ${
+              loginType === 'phone'
+                ? 'bg-white text-slate-900 shadow-xl'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Telefon
+          </button>
+          <button
+            type="button"
+            onClick={() => setLoginType('email')}
+            className={`flex-1 py-4 px-4 rounded-xl text-sm font-bold transition-all ${
+              loginType === 'email'
+                ? 'bg-white text-slate-900 shadow-xl'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Email
+          </button>
+        </div>
+
+        {/* Login Form */}
+        <form onSubmit={handleLogin} className="space-y-5">
+          {loginType === 'email' ? (
+            <div>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest translate-x-1 mb-2">
+                Email manzil
+              </label>
+              <div className="relative group">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                    <Mail className="w-5 h-5" />
+                </div>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="admin@dokonect.uz"
+                  required
+                  className="w-full pl-12 pr-4 py-5 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:bg-white/10 transition-all font-medium"
+                />
+              </div>
             </div>
-            <span className="text-white font-bold text-lg">Doko<span className="text-violet-400">nect</span></span>
-          </div>
-        </div>
-        <div className="relative z-10 space-y-4">
-          <h2 className="text-4xl font-bold text-white leading-tight">
-            B2B savdo<br />platformasi
-          </h2>
-          <p className="text-slate-400 text-base leading-relaxed max-w-sm">
-            Distribyutorlar va do'kon egalari uchun qulay ulgurji savdo tizimi.
-          </p>
-          <div className="flex gap-3 pt-2">
-            {['Tezkor', 'Ishonchli', 'Qulay'].map((tag) => (
-              <span key={tag} className="bg-white/10 text-white/80 text-xs font-medium px-3 py-1.5 rounded-full">
-                {tag}
-              </span>
-            ))}
-          </div>
-        </div>
-        <div className="relative z-10 text-slate-600 text-xs">
-          © 2025 Dokonect. Barcha huquqlar himoyalangan.
-        </div>
-      </div>
-
-      {/* Right panel */}
-      <div className="flex-1 flex items-center justify-center p-6 bg-slate-50">
-        <div className="w-full max-w-sm fade-up">
-          {/* Mobile logo */}
-          <div className="flex items-center gap-2 mb-8 lg:hidden">
-            <div className="w-7 h-7 bg-violet-600 rounded-lg flex items-center justify-center">
-              <Zap className="w-3.5 h-3.5 text-white" />
+          ) : (
+            <div>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest translate-x-1 mb-2">
+                Telefon raqam
+              </label>
+              <div className="relative group">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                    <Phone className="w-5 h-5" />
+                </div>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+998901234567"
+                  required
+                  className="w-full pl-12 pr-4 py-5 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:bg-white/10 transition-all font-medium"
+                />
+              </div>
             </div>
-            <span className="font-bold text-slate-800">Doko<span className="text-violet-600">nect</span></span>
+          )}
+
+          <div>
+             <div className="flex items-center justify-between mb-2 translate-x-1">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                Parol
+                </label>
+                <button type="button" className="text-[10px] font-black text-indigo-400 uppercase tracking-widest hover:text-indigo-300">Unutdingizmi?</button>
+             </div>
+            <div className="relative group">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                    <Lock className="w-5 h-5" />
+                </div>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="w-full pl-12 pr-4 py-5 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:bg-white/10 transition-all font-medium"
+              />
+            </div>
           </div>
 
-          <div className="mb-8">
-            <h1 className="text-2xl font-bold text-slate-900 mb-1">Tizimga kirish</h1>
-            <p className="text-slate-500 text-sm">Akkauntingizga kiring</p>
-          </div>
+          <motion.button
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.99 }}
+            type="submit"
+            disabled={loading}
+            className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-indigo-600/20 hover:bg-indigo-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-6"
+          >
+            {loading ? 'Kirish...' : 'Tizimga kirish'}
+          </motion.button>
+        </form>
 
-          <form onSubmit={handleSubmit((d) => mutate(d))} className="space-y-4">
-            <Input
-              label="Email"
-              type="email"
-              placeholder="email@example.com"
-              leftIcon={<Mail className="w-4 h-4" />}
-              error={errors.email?.message}
-              {...register('email')}
-            />
-            <Input
-              label="Parol"
-              type="password"
-              placeholder="••••••••"
-              leftIcon={<Lock className="w-4 h-4" />}
-              error={errors.password?.message}
-              {...register('password')}
-            />
-
-            <Button type="submit" isLoading={isPending} className="w-full mt-2" size="lg">
-              {!isPending && <>Kirish <ArrowRight className="w-4 h-4 ml-1.5" /></>}
-            </Button>
-          </form>
-
-          <p className="mt-6 text-center text-sm text-slate-500">
-            Akkaunt yo'qmi?{' '}
-            <Link to="/register" className="text-violet-600 font-semibold hover:text-violet-700">
-              Ro'yxatdan o'tish
-            </Link>
+        {/* Test Accounts */}
+        <div className="mt-10 p-5 bg-white/5 border border-white/10 rounded-[24px]">
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> Test hisoblar (Parol: 123456)
           </p>
+          <div className="space-y-3">
+            <button type="button" className="w-full flex items-center justify-between group cursor-pointer" onClick={() => { setLoginType('phone'); setPhone('+998901234567'); setPassword('123456'); }}>
+                <span className="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">Distribyutor</span>
+                <span className="text-[10px] font-mono text-slate-500">+998901234567</span>
+            </button>
+            <button type="button" className="w-full flex items-center justify-between group cursor-pointer" onClick={() => { setLoginType('phone'); setPhone('+998901234500'); setPassword('123456'); }}>
+                <span className="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">Do'kon egasi</span>
+                <span className="text-[10px] font-mono text-slate-500">+998901234500</span>
+            </button>
+            <button type="button" className="w-full flex items-center justify-between group cursor-pointer" onClick={() => { setLoginType('phone'); setPhone('+998900000000'); setPassword('123456'); }}>
+                <span className="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">Admin</span>
+                <span className="text-[10px] font-mono text-slate-500">+998900000000</span>
+            </button>
+          </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 };
-
-export default LoginPage;

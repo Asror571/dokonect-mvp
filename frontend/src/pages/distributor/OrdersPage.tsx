@@ -1,22 +1,28 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { fetchDistributorOrdersFn, updateOrderStatusFn } from '../../api/order.api';
-import { MapPin, PackageCheck, Loader2, ChevronDown } from 'lucide-react';
+import { MapPin, PackageCheck, Loader2, ChevronDown, Eye } from 'lucide-react';
 import { Badge } from '../../components/ui/Badge';
 import { format } from 'date-fns';
 import { uz } from 'date-fns/locale';
 import toast from 'react-hot-toast';
 
 const statusOptions = [
-  { value: 'PENDING',    label: 'Kutilmoqda',     variant: 'warning'   },
-  { value: 'CONFIRMED',  label: 'Tasdiqlandi',    variant: 'primary'   },
-  { value: 'DELIVERING', label: 'Yetkazilmoqda', variant: 'info'      },
-  { value: 'DELIVERED',  label: 'Yetkazildi',    variant: 'success'   },
-  { value: 'CANCELLED',  label: 'Bekor qilindi', variant: 'danger'    },
+  { value: 'NEW',        label: 'Yangi',          variant: 'warning'   },
+  { value: 'ACCEPTED',   label: 'Qabul qilindi',  variant: 'primary'   },
+  { value: 'REJECTED',   label: 'Rad etildi',     variant: 'danger'    },
+  { value: 'ASSIGNED',   label: 'Assign qilindi', variant: 'info'      },
+  { value: 'IN_TRANSIT', label: 'Yo\'lda',         variant: 'info'      },
+  { value: 'DELIVERED',  label: 'Yetkazildi',     variant: 'success'   },
+  { value: 'RETURNED',   label: 'Qaytarildi',     variant: 'warning'   },
+  { value: 'CANCELLED',  label: 'Bekor qilindi',  variant: 'danger'    },
+  { value: 'PAID',       label: 'To\'landi',       variant: 'success'   },
 ];
 
 const DistributorOrdersPage = () => {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const { data: fetchRes, isLoading } = useQuery({
@@ -37,7 +43,7 @@ const DistributorOrdersPage = () => {
     },
   });
 
-  const orders = fetchRes?.data || [];
+  const orders = fetchRes?.data?.orders || [];
 
   if (isLoading) {
     return (
@@ -68,7 +74,7 @@ const DistributorOrdersPage = () => {
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/60">
-                  {['Buyurtmachi', 'Sana', 'Manzil', 'Summa', 'Holat', 'Boshqaruv'].map((h) => (
+                  {['Buyurtmachi', 'Sana', 'Manzil', 'Summa', 'Holat', 'Boshqaruv', ''].map((h) => (
                     <th key={h} className="px-5 py-3.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">
                       {h}
                     </th>
@@ -84,11 +90,11 @@ const DistributorOrdersPage = () => {
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-2.5">
                           <div className="w-8 h-8 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center text-xs font-bold shrink-0">
-                            {order.storeOwner?.storeName?.charAt(0) || 'S'}
+                            {order.client?.storeName?.charAt(0) || 'S'}
                           </div>
                           <div>
-                            <p className="text-sm font-semibold text-slate-800 leading-none">{order.storeOwner?.storeName}</p>
-                            <p className="text-xs text-slate-400 mt-0.5">{order.storeOwner?.phone}</p>
+                            <p className="text-sm font-semibold text-slate-800 leading-none">{order.client?.storeName}</p>
+                            <p className="text-xs text-slate-400 mt-0.5">{order.client?.phone || order.client?.user?.phone}</p>
                           </div>
                         </div>
                       </td>
@@ -152,6 +158,16 @@ const DistributorOrdersPage = () => {
                           </div>
                         )}
                       </td>
+
+                       {/* Detail link */}
+                       <td className="px-5 py-4">
+                         <button
+                           onClick={() => navigate(`/distributor/orders/${order.id}`)}
+                           className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 text-violet-600 rounded-lg text-xs font-medium hover:bg-violet-100 transition-colors"
+                         >
+                           <Eye className="w-3.5 h-3.5" /> Batafsil
+                         </button>
+                       </td>
                     </tr>
                   );
                 })}

@@ -9,22 +9,22 @@ import {
   deleteProduct, 
   updateProductStock 
 } from '../controllers/product.controller';
-import { protect } from '../middleware/auth.middleware';
+import { authenticate } from '../middleware/auth.middleware';
 import { authorize } from '../middleware/role.middleware';
 import { upload } from '../services/upload.service';
 
 const router = express.Router();
 
-// Store Owner / public product routes
-router.get('/products/categories', protect, getCategories);
-router.get('/products', protect, getAllProducts);
-router.get('/products/:id', protect, getProductById);
+// Public product routes (no auth required for categories and products)
+router.get('/categories', getCategories);
+router.get('/', getAllProducts);
+router.get('/:id', getProductById);
 
-// Distributor routes
-router.get('/distributor/products', protect, authorize('DISTRIBUTOR'), getDistributorProducts);
-router.post('/distributor/products', protect, authorize('DISTRIBUTOR'), upload.single('image'), createProduct);
-router.put('/distributor/products/:id', protect, authorize('DISTRIBUTOR'), upload.single('image'), updateProduct);
-router.patch('/distributor/products/:id/stock', protect, authorize('DISTRIBUTOR'), updateProductStock);
-router.delete('/distributor/products/:id', protect, authorize('DISTRIBUTOR'), deleteProduct);
+// Distributor routes (auth required)
+router.get('/distributor/products', authenticate, authorize('DISTRIBUTOR'), getDistributorProducts);
+router.post('/distributor/products', authenticate, authorize('DISTRIBUTOR'), upload.single('image'), createProduct);
+router.put('/distributor/products/:id', authenticate, authorize('DISTRIBUTOR'), upload.single('image'), updateProduct);
+router.patch('/distributor/products/:id/stock', authenticate, authorize('DISTRIBUTOR'), updateProductStock);
+router.delete('/distributor/products/:id', authenticate, authorize('DISTRIBUTOR'), deleteProduct);
 
 export default router;

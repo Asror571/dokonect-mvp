@@ -8,168 +8,651 @@ datasource db {
 }
 
 model User {
-  id          String   @id @default(uuid())
-  email       String   @unique
-  password    String
-  role        Role     @default(STORE_OWNER)
-  isVerified  Boolean  @default(false)
-  isBlocked   Boolean  @default(false)
-  createdAt   DateTime @default(now())
-
-  storeOwner    StoreOwner?
-  distributor   Distributor?
-  messages      Message[]
-  notifications Notification[]
+  id                    String         @id @default(uuid())
+  name                  String
+  phone                 String         @unique
+  email                 String?        @unique
+  password              String
+  avatar                String?
+  role                  Role           @default(CLIENT)
+  status                UserStatus     @default(ACTIVE)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  lastLogin             DateTime?
+  permissions           Json?
+  refreshToken          String?
+  subRole               SubRole?
+  failedLoginAttempts   Int            @default(0)
+  lockedUntil           DateTime?
+  activityLogs          ActivityLog[]
+  client                Client?
+  distributor           Distributor?
+  driver                Driver?
+  sentMessages          Message[]
+  notifications         Notification[]
+  reviews               Review[]
+  reviewReplies         ReviewReply[]
 }
 
-enum Role {
-  STORE_OWNER
-  DISTRIBUTOR
-  ADMIN
-}
-
-model StoreOwner {
-  id        String   @id @default(uuid())
-  userId    String   @unique
-  storeName String
-  address   String
-  phone     String
-  user      User     @relation(fields: [userId], references: [id])
-  orders    Order[]
-  reviews   Review[]
-  chatRooms ChatRoom[]
+model Client {
+  id            String           @id @default(uuid())
+  userId        String           @unique
+  addresses     Json?
+  loyaltyPoints Int              @default(0)
+  tier          ClientTier       @default(BRONZE)
+  region        String?
+  storeName     String?
+  taxId         String?
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ratings       DeliveryRating[]
+  orders        Order[]
+  priceRules    PriceRule[]
+  promoUsages   PromoUsage[]
+  reviews       Review[]
+  debts         Debt[]
+  storeLinks    StoreDistributorLink[]
+  chatRooms     ChatRoom[]
 }
 
 model Distributor {
-  id          String    @id @default(uuid())
-  userId      String    @unique
-  companyName String
-  address     String
-  phone       String
-  isVerified  Boolean   @default(false)
-  logoUrl     String?
-  description String?
-  user        User      @relation(fields: [userId], references: [id])
-  products    Product[]
-  orders      Order[]
-  chatRooms   ChatRoom[]
+  id              String      @id @default(uuid())
+  userId          String      @unique
+  address         String
+  workingHours    String      @default("09:00-18:00")
+  isVerified      Boolean     @default(false)
+  banner          String?
+  companyName     String      @default("Company")
+  description     String?
+  logo            String?
+  metaDescription String?
+  metaTitle       String?
+  phone           String      @default("")
+  rating          Float       @default(0)
+  slug            String?     @unique
+  totalReviews    Int         @default(0)
+  brands          Brand[]
+  categories      Category[]
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders          Order[]
+  products        Product[]
+  promoCodes      PromoCode[]
+  stockLogs       StockLog[]
+  warehouses      Warehouse[]
+  storeLinks      StoreDistributorLink[]
+  debts           Debt[]
+  chatRooms       ChatRoom[]
+}
+
+model Driver {
+  id              String           @id @default(uuid())
+  userId          String           @unique
+  vehicleType     String
+  vehicleNumber   String
+  licenseNumber   String
+  rating          Float            @default(5.0)
+  totalDeliveries Int              @default(0)
+  isOnline        Boolean          @default(false)
+  currentLat      Float?
+  currentLng      Float?
+  licensePhoto    String?
+  passportNumber  String?
+  status          DriverStatus     @default(ACTIVE)
+  deliveries      Delivery[]
+  ratings         DeliveryRating[]
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  earnings        DriverEarning[]
+  locations       DriverLocation[]
+  zones           DriverZone[]
+  orders          Order[]
 }
 
 model Product {
+  id             String           @id @default(uuid())
+  distributorId  String
+  name           String
+  sku            String           @unique
+  description    String?
+  unit           String           @default("pcs")
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  brandId        String?
+  categoryId     String?
+  costPrice      Float?
+  discountType   DiscountType?
+  discountValue  Float?
+  retailPrice    Float?
+  status         ProductStatus    @default(DRAFT)
+  wholesalePrice Float            @default(0)
+  youtubeUrl     String?
+  bulkRules      BulkRule[]
+  inventory      Inventory[]
+  orderItems     OrderItem[]
+  priceRules     PriceRule[]
+  brand          Brand?           @relation(fields: [brandId], references: [id])
+  category       Category?        @relation(fields: [categoryId], references: [id])
+  distributor    Distributor      @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  images         ProductImage[]
+  variants       ProductVariant[]
+  reviews        Review[]
+  stockLogs      StockLog[]
+}
+
+model ProductImage {
+  id        String   @id @default(uuid())
+  productId String
+  url       String
+  order     Int      @default(0)
+  isCover   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model ProductVariant {
+  id            String      @id @default(uuid())
+  productId     String
+  color         String?
+  size          String?
+  model         String?
+  skuVariant    String      @unique
+  priceOverride Float?
+  createdAt     DateTime    @default(now())
+  inventory     Inventory[]
+  orderItems    OrderItem[]
+  product       Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, color, size, model])
+}
+
+model Category {
   id            String      @id @default(uuid())
   distributorId String
   name          String
-  description   String?
-  price         Float
-  unit          String      @default("dona")
-  stock         Int         @default(0)
-  category      String
-  imageUrl      String?
-  isActive      Boolean     @default(true)
-  avgRating     Float       @default(0)
-  reviewCount   Int         @default(0)
+  slug          String
+  parentId      String?
+  image         String?
+  icon          String?
+  order         Int         @default(0)
   createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  distributor   Distributor @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  parent        Category?   @relation("CategoryTree", fields: [parentId], references: [id])
+  children      Category[]  @relation("CategoryTree")
+  products      Product[]
 
-  distributor   Distributor @relation(fields: [distributorId], references: [id])
-  orderItems    OrderItem[]
-  reviews       Review[]
+  @@unique([distributorId, slug])
 }
 
-model Order {
+model Brand {
   id            String      @id @default(uuid())
-  storeOwnerId  String
   distributorId String
-  status        OrderStatus @default(PENDING)
-  totalAmount   Float
-  address       String
-  note          String?
+  name          String
+  slug          String
+  logo          String?
   createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  distributor   Distributor @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  products      Product[]
 
-  storeOwner    StoreOwner  @relation(fields: [storeOwnerId], references: [id])
-  distributor   Distributor @relation(fields: [distributorId], references: [id])
-  items         OrderItem[]
+  @@unique([distributorId, slug])
 }
 
-enum OrderStatus {
+model Warehouse {
+  id                String              @id @default(uuid())
+  distributorId     String
+  name              String
+  address           String
+  region            String
+  managerId         String?
+  isActive          Boolean             @default(true)
+  createdAt         DateTime            @default(now())
+  inventory         Inventory[]
+  distributor       Distributor         @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  receivedTransfers WarehouseTransfer[] @relation("DestinationWarehouse")
+  transfers         WarehouseTransfer[] @relation("SourceWarehouse")
+}
+
+model Inventory {
+  id           String          @id @default(uuid())
+  productId    String
+  variantId    String?
+  warehouseId  String
+  quantity     Int             @default(0)
+  reserved     Int             @default(0)
+  minThreshold Int             @default(5)
+  lastUpdated  DateTime        @updatedAt
+  product      Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant      ProductVariant? @relation(fields: [variantId], references: [id])
+  warehouse    Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, variantId, warehouseId])
+}
+
+model WarehouseTransfer {
+  id                String         @id @default(uuid())
+  sourceWarehouseId String
+  destWarehouseId   String
+  productId         String
+  variantId         String?
+  quantity          Int
+  status            TransferStatus @default(PENDING)
+  note              String?
+  createdAt         DateTime       @default(now())
+  completedAt       DateTime?
+  destWarehouse     Warehouse      @relation("DestinationWarehouse", fields: [destWarehouseId], references: [id])
+  sourceWarehouse   Warehouse      @relation("SourceWarehouse", fields: [sourceWarehouseId], references: [id])
+}
+
+model Zone {
+  id        String       @id @default(uuid())
+  name      String
+  region    String
+  createdAt DateTime     @default(now())
+  drivers   DriverZone[]
+}
+
+model DriverZone {
+  id       String @id @default(uuid())
+  driverId String
+  zoneId   String
+  driver   Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  zone     Zone   @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@unique([driverId, zoneId])
+}
+
+model StoreDistributorLink {
+  id              String      @id @default(uuid())
+  storeOwnerId    String
+  distributorId   String
+  status          LinkStatus  @default(PENDING)
+  customPriceGroup String?    // Bu dokon uchun qaysi narx guruhi
+  approvedAt      DateTime?
+  createdAt       DateTime    @default(now())
+
+  storeOwner      Client      @relation(fields: [storeOwnerId], references: [id])
+  distributor     Distributor @relation(fields: [distributorId], references: [id])
+
+  @@unique([storeOwnerId, distributorId])
+}
+
+enum LinkStatus {
   PENDING
-  CONFIRMED
-  DELIVERING
-  DELIVERED
-  CANCELLED
+  APPROVED
+  REJECTED
+  BLOCKED
 }
 
-model OrderItem {
-  id        String  @id @default(uuid())
-  orderId   String
+model PriceRule {
+  id        String    @id @default(uuid())
   productId String
-  quantity  Int
+  variantId String?
+  clientId  String?
   price     Float
+  validFrom DateTime?
+  validTo   DateTime?
+  createdAt DateTime  @default(now())
+  client    Client?   @relation(fields: [clientId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
 
-  order     Order   @relation(fields: [orderId], references: [id])
-  product   Product @relation(fields: [productId], references: [id])
+model BulkRule {
+  id            String       @id @default(uuid())
+  productId     String
+  minQuantity   Int
+  maxQuantity   Int?
+  discountType  DiscountType
+  discountValue Float
+  createdAt     DateTime     @default(now())
+  product       Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model PromoCode {
+  id             String       @id @default(uuid())
+  distributorId  String
+  code           String       @unique
+  discountType   DiscountType
+  discountValue  Float
+  minOrderAmount Float?
+  maxUses        Int?
+  usesPerClient  Int          @default(1)
+  validFrom      DateTime?
+  validTo        DateTime?
+  applicableTo   Json?
+  createdAt      DateTime     @default(now())
+  distributor    Distributor  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  usages         PromoUsage[]
+}
+
+model PromoUsage {
+  id          String    @id @default(uuid())
+  promoCodeId String
+  clientId    String
+  orderId     String
+  usedAt      DateTime  @default(now())
+  client      Client    @relation(fields: [clientId], references: [id])
+  promoCode   PromoCode @relation(fields: [promoCodeId], references: [id])
 }
 
 model Review {
-  id           String     @id @default(uuid())
-  productId    String
-  storeOwnerId String
-  rating       Int
-  comment      String?
-  createdAt    DateTime   @default(now())
+  id        String        @id @default(uuid())
+  productId String
+  clientId  String
+  userId    String
+  orderId   String        @unique
+  rating    Int
+  comment   String?
+  images    Json?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  client    Client        @relation(fields: [clientId], references: [id])
+  product   Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id])
+  replies   ReviewReply[]
+}
 
-  product      Product    @relation(fields: [productId], references: [id])
-  storeOwner   StoreOwner @relation(fields: [storeOwnerId], references: [id])
+model ReviewReply {
+  id        String   @id @default(uuid())
+  reviewId  String
+  userId    String
+  comment   String
+  createdAt DateTime @default(now())
+  review    Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+}
 
-  @@unique([productId, storeOwnerId])
+model Order {
+  id               String               @id @default(uuid())
+  clientId         String
+  distributorId    String
+  driverId         String?
+  status           OrderStatus          @default(NEW)
+  totalAmount      Float
+  deliveryAddress  Json
+  deliveryTimeSlot String?
+  notes            String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  deliveryFee      Float                @default(0)
+  discount         Float                @default(0)
+  internalNote     String?
+  paymentMethod    PaymentMethod?
+  paymentStatus    PaymentStatus        @default(UNPAID)
+  rejectionReason  String?
+  subtotal         Float                @default(0)
+  delivery         Delivery?
+  client           Client               @relation(fields: [clientId], references: [id])
+  distributor      Distributor          @relation(fields: [distributorId], references: [id])
+  driver           Driver?              @relation(fields: [driverId], references: [id])
+  items            OrderItem[]
+  statusHistory    OrderStatusHistory[]
+  debt             Debt?
+}
+
+model Debt {
+  id             String     @id @default(uuid())
+  orderId        String     @unique
+  order          Order      @relation(fields: [orderId], references: [id])
+  clientId       String
+  client         Client     @relation(fields: [clientId], references: [id])
+  distributorId  String
+  distributor    Distributor @relation(fields: [distributorId], references: [id])
+  originalAmount Float
+  paidAmount     Float      @default(0)
+  remainingAmount Float
+  dueDate        DateTime?
+  status         DebtStatus @default(UNPAID)
+  createdAt      DateTime   @default(now())
+}
+
+enum DebtStatus {
+  UNPAID
+  PARTIAL
+  PAID
+  OVERDUE
+}
+
+model OrderItem {
+  id        String          @id @default(uuid())
+  orderId   String
+  productId String
+  quantity  Int
+  unitPrice Float
+  discount  Float           @default(0)
+  total     Float           @default(0)
+  variantId String?
+  order     Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product         @relation(fields: [productId], references: [id])
+  variant   ProductVariant? @relation(fields: [variantId], references: [id])
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(uuid())
+  orderId   String
+  status    OrderStatus
+  timestamp DateTime    @default(now())
+  note      String?
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Delivery {
+  id            String    @id @default(uuid())
+  orderId       String    @unique
+  driverId      String
+  pickupTime    DateTime?
+  deliveryTime  DateTime?
+  photoProof    String?
+  signature     String?
+  problemReport String?
+  createdAt     DateTime  @default(now())
+  driver        Driver    @relation(fields: [driverId], references: [id])
+  order         Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model DeliveryRating {
+  id        String   @id @default(uuid())
+  clientId  String
+  driverId  String
+  orderId   String   @unique
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+  client    Client   @relation(fields: [clientId], references: [id])
+  driver    Driver   @relation(fields: [driverId], references: [id])
+}
+
+model StockLog {
+  id            String       @id @default(uuid())
+  productId     String
+  distributorId String
+  type          StockLogType
+  quantity      Int
+  note          String?
+  createdAt     DateTime     @default(now())
+  document      String?
+  reason        StockReason?
+  variantId     String?
+  warehouseId   String?
+  distributor   Distributor  @relation(fields: [distributorId], references: [id])
+  product       Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model DriverLocation {
+  id        String   @id @default(uuid())
+  driverId  String
+  lat       Float
+  lng       Float
+  timestamp DateTime @default(now())
+  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+}
+
+model DriverEarning {
+  id       String   @id @default(uuid())
+  driverId String
+  orderId  String
+  amount   Float
+  bonus    Float    @default(0)
+  date     DateTime @default(now())
+  driver   Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  metadata  Json?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model ChatRoom {
-  id            String      @id @default(uuid())
-  storeOwnerId  String
-  distributorId String
-  createdAt     DateTime    @default(now())
-  lastMessageAt DateTime    @default(now())
+  id             String    @id @default(uuid())
+  storeOwnerId   String
+  distributorId  String
+  lastMessageAt  DateTime  @default(now())
+  createdAt      DateTime  @default(now())
 
-  storeOwner    StoreOwner  @relation(fields: [storeOwnerId], references: [id])
-  distributor   Distributor @relation(fields: [distributorId], references: [id])
-  messages      Message[]
+  messages       Message[]
+  storeOwner     Client      @relation(fields: [storeOwnerId], references: [id], onDelete: Cascade)
+  distributor    Distributor @relation(fields: [distributorId], references: [id], onDelete: Cascade)
 
   @@unique([storeOwnerId, distributorId])
 }
 
 model Message {
-  id         String   @id @default(uuid())
-  chatRoomId String
-  senderId   String
-  content    String
-  isRead     Boolean  @default(false)
-  createdAt  DateTime @default(now())
+  id           String      @id @default(uuid())
+  chatRoomId   String
+  senderId     String
+  content      String
+  isRead       Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  fileUrl      String?
+  orderId      String?
+  type         MessageType @default(TEXT)
 
-  chatRoom   ChatRoom @relation(fields: [chatRoomId], references: [id])
-  sender     User     @relation(fields: [senderId], references: [id])
+  chatRoom     ChatRoom    @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
+  sender       User        @relation(fields: [senderId], references: [id], onDelete: Cascade)
 }
 
 model Notification {
-  id        String     @id @default(uuid())
+  id        String    @id @default(uuid())
   userId    String
   type      NotifType
   title     String
   body      String
-  isRead    Boolean    @default(false)
+  isRead    Boolean   @default(false)
   metadata  Json?
-  createdAt DateTime   @default(now())
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id])
+}
 
-  user      User       @relation(fields: [userId], references: [id])
+enum Role {
+  ADMIN
+  DISTRIBUTOR
+  DRIVER
+  CLIENT
+}
+
+enum SubRole {
+  SUPER_ADMIN
+  WAREHOUSE_MANAGER
+  SALES_MANAGER
+  DRIVER_MANAGER
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+enum ClientTier {
+  BRONZE
+  SILVER
+  GOLD
+  VIP
+}
+
+enum DriverStatus {
+  ACTIVE
+  INACTIVE
+  ON_LEAVE
+}
+
+enum ProductStatus {
+  ACTIVE
+  DRAFT
+  OUT_OF_STOCK
+}
+
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+enum TransferStatus {
+  PENDING
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}
+
+enum OrderStatus {
+  NEW
+  ACCEPTED
+  REJECTED
+  ASSIGNED
+  PICKED
+  IN_TRANSIT
+  DELIVERED
+  RETURNED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  CREDIT
+  BANK_TRANSFER
+}
+
+enum StockLogType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+enum StockReason {
+  PURCHASE
+  RETURN
+  ADJUSTMENT
+  DAMAGE
+  SALE
+  TRANSFER
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  ORDER_LINK
 }
 
 enum NotifType {
-  ORDER_PLACED
-  ORDER_CONFIRMED
-  ORDER_DELIVERING
+  ORDER_NEW
+  ORDER_ACCEPTED
+  ORDER_REJECTED
+  ORDER_STATUS_UPDATE
   ORDER_DELIVERED
   ORDER_CANCELLED
+  DRIVER_ASSIGNED
+  STOCK_LOW_ALERT
   NEW_MESSAGE
-  NEW_REVIEW
+  DRIVER_LOCATION_UPDATE
+  PAYMENT_REMINDER
+  REVIEW_NEW
 }

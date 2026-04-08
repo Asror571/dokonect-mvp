@@ -74,6 +74,11 @@ const ProductCard: React.FC<ProductCardProps> = ({
           <h3 className="font-semibold text-slate-800 text-sm leading-snug line-clamp-2 mb-1.5">
             {product.name}
           </h3>
+          {product.description && (
+            <p className="text-xs text-slate-600 line-clamp-2 mb-1.5">
+              {product.description}
+            </p>
+          )}
           <div className="flex items-center gap-1.5 flex-wrap mb-1">
             <Badge variant="secondary">{product.category}</Badge>
             {product.distributor?.companyName && (

@@ -16,7 +16,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ rooms, selectedRoomId, onSele
   const [search, setSearch] = useState('');
 
   const filtered = rooms.filter((r) => {
-    const name = user?.role === 'STORE_OWNER'
+    const name = user?.role === 'CLIENT'
       ? r.distributor?.companyName
       : r.storeOwner?.storeName;
     return name?.toLowerCase().includes(search.toLowerCase());
@@ -44,10 +44,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ rooms, selectedRoomId, onSele
           </div>
         ) : (
           filtered.map((room) => {
-            const name = user?.role === 'STORE_OWNER'
+            const name = user?.role === 'CLIENT'
               ? room.distributor?.companyName
               : room.storeOwner?.storeName;
-            const lastMsg = room.messages?.[0];
+            const lastMsg = room.lastMessage;
+            const lastMsgAt = room.lastMessageAt;
 
             return (
               <button
@@ -64,14 +65,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ rooms, selectedRoomId, onSele
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-semibold text-slate-800 truncate">{name}</p>
-                    {lastMsg && (
+                    {lastMsgAt && (
                       <span className="text-[10px] text-slate-400 shrink-0 ml-1">
-                        {formatDistanceToNow(new Date(lastMsg.createdAt), { addSuffix: false })}
+                        {formatDistanceToNow(new Date(lastMsgAt), { addSuffix: false })}
                       </span>
                     )}
                   </div>
                   <p className="text-xs text-slate-400 truncate mt-0.5">
-                    {lastMsg?.content || 'Xabar yo\'q'}
+                    {lastMsg || 'Xabar yo\'q'}
                   </p>
                 </div>
                 {room.unreadCount > 0 && (

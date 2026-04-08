@@ -11,7 +11,7 @@ function getPeriodDate(period: string): Date {
 
 // GET /api/analytics/distributor/overview
 export const distributorOverview = asyncHandler(async (req: Request, res: Response) => {
-  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.id } });
+  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.userId } });
   if (!dist) { res.status(403); throw new Error('Distribyutor profili topilmadi'); }
 
   const [totalOrders, totalRevenue, totalProducts, pendingOrders] = await Promise.all([
@@ -20,8 +20,8 @@ export const distributorOverview = asyncHandler(async (req: Request, res: Respon
       where: { distributorId: dist.id, status: 'DELIVERED' },
       _sum: { totalAmount: true },
     }),
-    prisma.product.count({ where: { distributorId: dist.id, isActive: true } }),
-    prisma.order.count({ where: { distributorId: dist.id, status: 'PENDING' } }),
+    prisma.product.count({ where: { distributorId: dist.id, status: 'ACTIVE' } }),
+    prisma.order.count({ where: { distributorId: dist.id, status: 'NEW' } }),
   ]);
 
   sendSuccess(res, {
@@ -34,7 +34,7 @@ export const distributorOverview = asyncHandler(async (req: Request, res: Respon
 
 // GET /api/analytics/distributor/sales
 export const distributorSales = asyncHandler(async (req: Request, res: Response) => {
-  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.id } });
+  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.userId } });
   if (!dist) { res.status(403); throw new Error('Distribyutor profili topilmadi'); }
 
   const period = (req.query.period as string) || '7d';
@@ -59,7 +59,7 @@ export const distributorSales = asyncHandler(async (req: Request, res: Response)
 
 // GET /api/analytics/distributor/top-products
 export const distributorTopProducts = asyncHandler(async (req: Request, res: Response) => {
-  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.id } });
+  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.userId } });
   if (!dist) { res.status(403); throw new Error('Distribyutor profili topilmadi'); }
 
   const limit = parseInt(req.query.limit as string) || 5;
@@ -76,7 +76,7 @@ export const distributorTopProducts = asyncHandler(async (req: Request, res: Res
     items.map(async (item) => {
       const product = await prisma.product.findUnique({
         where: { id: item.productId },
-        select: { id: true, name: true, imageUrl: true, price: true },
+        select: { id: true, name: true, images: { take: 1, select: { url: true } }, wholesalePrice: true },
       });
       return { ...product, totalSold: item._sum.quantity || 0 };
     })
@@ -87,13 +87,13 @@ export const distributorTopProducts = asyncHandler(async (req: Request, res: Res
 
 // GET /api/analytics/distributor/top-stores
 export const distributorTopStores = asyncHandler(async (req: Request, res: Response) => {
-  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.id } });
+  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.userId } });
   if (!dist) { res.status(403); throw new Error('Distribyutor profili topilmadi'); }
 
   const limit = parseInt(req.query.limit as string) || 5;
 
   const orders = await prisma.order.groupBy({
-    by: ['storeOwnerId'],
+    by: ['clientId'],
     where: { distributorId: dist.id, status: 'DELIVERED' },
     _sum: { totalAmount: true },
     _count: { id: true },
@@ -103,11 +103,11 @@ export const distributorTopStores = asyncHandler(async (req: Request, res: Respo
 
   const stores = await Promise.all(
     orders.map(async (o) => {
-      const store = await prisma.storeOwner.findUnique({
-        where: { id: o.storeOwnerId },
-        select: { id: true, storeName: true, address: true },
+      const client = await prisma.client.findUnique({
+        where: { id: o.clientId },
+        select: { id: true, storeName: true, region: true },
       });
-      return { ...store, totalRevenue: o._sum.totalAmount || 0, orderCount: o._count.id };
+      return { ...client, totalRevenue: o._sum.totalAmount || 0, orderCount: o._count.id };
     })
   );
 
@@ -120,7 +120,7 @@ export const adminOverview = asyncHandler(async (_req: Request, res: Response) =
     prisma.user.count(),
     prisma.order.count(),
     prisma.order.aggregate({ where: { status: 'DELIVERED' }, _sum: { totalAmount: true } }),
-    prisma.product.count({ where: { isActive: true } }),
+    prisma.product.count({ where: { status: 'ACTIVE' } }),
     prisma.distributor.count({ where: { isVerified: true } }),
   ]);
 

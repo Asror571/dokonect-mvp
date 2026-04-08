@@ -1,6 +1,5 @@
 import express from 'express';
-import { protect } from '../middleware/auth.middleware';
-import { authorize } from '../middleware/role.middleware';
+import { authenticate, authorize } from '../middleware/auth.middleware';
 import {
   getUsers, blockUser, unblockUser, verifyDistributor,
   getAdminProducts, deactivateProduct, getAdminOrders,
@@ -8,7 +7,8 @@ import {
 
 const router = express.Router();
 
-router.use(protect, authorize('ADMIN'));
+router.use(authenticate);
+router.use(authorize(['ADMIN']));
 
 router.get('/users',                       getUsers);
 router.patch('/users/:id/block',           blockUser);

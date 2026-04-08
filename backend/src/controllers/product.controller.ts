@@ -20,7 +20,7 @@ export const getAllProducts = asyncHandler(async (req: Request, res: Response) =
   const skip         = (page - 1) * limit;
 
   const where: any = {
-    isActive: true,
+    status: 'ACTIVE',
     distributor: { isVerified: true },
   };
 
@@ -34,9 +34,9 @@ export const getAllProducts = asyncHandler(async (req: Request, res: Response) =
   if (category)     where.category     = { contains: category, mode: 'insensitive' };
   if (distributorId) where.distributorId = distributorId;
   if (minPrice !== undefined || maxPrice !== undefined) {
-    where.price = {};
-    if (minPrice !== undefined) where.price.gte = minPrice;
-    if (maxPrice !== undefined) where.price.lte = maxPrice;
+    where.wholesalePrice = {};
+    if (minPrice !== undefined) where.wholesalePrice.gte = minPrice;
+    if (maxPrice !== undefined) where.wholesalePrice.lte = maxPrice;
   }
   if (minRating !== undefined) where.avgRating = { gte: minRating };
   if (inStock) where.stock = { gt: 0 };
@@ -50,23 +50,30 @@ export const getAllProducts = asyncHandler(async (req: Request, res: Response) =
   const [products, total] = await Promise.all([
     prisma.product.findMany({
       where, orderBy, skip, take: limit,
-      include: { distributor: { select: { id: true, companyName: true, phone: true } } },
+      include: { 
+        distributor: { select: { id: true, companyName: true, phone: true } },
+        images: { where: { isCover: true }, take: 1 }
+      },
     }),
     prisma.product.count({ where }),
   ]);
 
-  sendSuccess(res, { products, total, page, limit }, 'Mahsulotlar', 200);
+  const formattedProducts = products.map((product: any) => ({
+    ...product,
+    imageUrl: product.images?.[0]?.url || null
+  }));
+
+  sendSuccess(res, { products: formattedProducts, total, page, limit }, 'Mahsulotlar', 200);
 });
 
 // GET /api/products/categories
 export const getCategories = asyncHandler(async (_req: Request, res: Response) => {
-  const products = await prisma.product.findMany({
-    where: { isActive: true },
-    select: { category: true },
-    distinct: ['category'],
-    orderBy: { category: 'asc' },
+  const categories = await prisma.category.findMany({
+    select: { name: true },
+    orderBy: { name: 'asc' },
   });
-  sendSuccess(res, products.map(p => p.category), 'Kategoriyalar', 200);
+  const categoryNames = categories.map((c: any) => c.name);
+  sendSuccess(res, categoryNames, 'Kategoriyalar', 200);
 });
 
 // GET /api/products/:id
@@ -82,29 +89,35 @@ export const getProductById = asyncHandler(async (req: Request, res: Response) =
 
 // GET /api/distributor/products
 export const getDistributorProducts = asyncHandler(async (req: Request, res: Response) => {
-  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.id } });
+  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.userId } });
   if (!dist) { res.status(403); throw new Error('Distribyutor profili topilmadi'); }
 
   const products = await prisma.product.findMany({
     where: { distributorId: dist.id },
+    include: { images: { where: { isCover: true }, take: 1 } },
     orderBy: { createdAt: 'desc' },
   });
-  sendSuccess(res, products, 'Sizning mahsulotlaringiz', 200);
+  
+  const formattedProducts = products.map((product: any) => ({
+    ...product,
+    imageUrl: product.images?.[0]?.url || null
+  }));
+  
+  sendSuccess(res, formattedProducts, 'Sizning mahsulotlaringiz', 200);
 });
 
 // POST /api/distributor/products
 export const createProduct = asyncHandler(async (req: Request, res: Response) => {
-  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.id } });
+  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.userId } });
   if (!dist) { res.status(403); throw new Error('Distribyutor profili topilmadi'); }
 
   const name = String(req.body.name || '');
-  const price = String(req.body.price || '0');
+  const wholesalePrice = String(req.body.wholesalePrice || '0');
   const description = String(req.body.description || '');
-  const category = String(req.body.category || '');
+  const categoryId = String(req.body.categoryId || '');
   const unit = String(req.body.unit || 'dona');
-  const stock = String(req.body.stock || '0');
 
-  if (!name || !price || !category) {
+  if (!name || !wholesalePrice || !categoryId) {
     res.status(400); throw new Error('Nom, narx va kategoriya kiritilishi shart');
   }
 
@@ -115,14 +128,24 @@ export const createProduct = asyncHandler(async (req: Request, res: Response) =>
     data: {
       distributorId: dist.id,
       name,
-      price: parseFloat(price),
+      wholesalePrice: parseFloat(wholesalePrice),
       description,
-      category,
+      categoryId,
       unit,
-      stock: parseInt(stock),
-      imageUrl,
+      sku: `PRD-${Date.now()}`,
+      status: 'ACTIVE',
     },
   });
+
+  if (imageUrl) {
+    await prisma.productImage.create({
+      data: {
+        productId: product.id,
+        url: imageUrl,
+        isCover: true,
+      },
+    });
+  }
 
   sendSuccess(res, product, 'Mahsulot qo\'shildi', 201);
 });
@@ -130,33 +153,48 @@ export const createProduct = asyncHandler(async (req: Request, res: Response) =>
 // PUT /api/distributor/products/:id
 export const updateProduct = asyncHandler(async (req: Request, res: Response) => {
   const productId = String(req.params.id);
-  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.id } });
+  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.userId } });
   if (!dist) { res.status(403); throw new Error('Distribyutor profili topilmadi'); }
 
   const existing = await prisma.product.findFirst({ where: { id: productId, distributorId: dist.id } });
   if (!existing) { res.status(404); throw new Error('Mahsulot topilmadi'); }
 
   const name = req.body.name ? String(req.body.name) : undefined;
-  const price = req.body.price ? String(req.body.price) : undefined;
+  const wholesalePrice = req.body.wholesalePrice ? String(req.body.wholesalePrice) : undefined;
   const description = req.body.description !== undefined ? String(req.body.description) : undefined;
-  const category = req.body.category ? String(req.body.category) : undefined;
+  const categoryId = req.body.categoryId ? String(req.body.categoryId) : undefined;
   const unit = req.body.unit ? String(req.body.unit) : undefined;
-  const stock = req.body.stock !== undefined ? String(req.body.stock) : undefined;
 
-  let imageUrl = existing.imageUrl;
-  if (req.file) imageUrl = await uploadToCloudinary(req.file.path) || imageUrl;
+  const updateData: any = {};
+  if (name) updateData.name = name;
+  if (wholesalePrice) updateData.wholesalePrice = parseFloat(wholesalePrice);
+  if (description !== undefined) updateData.description = description;
+  if (categoryId) updateData.categoryId = categoryId;
+  if (unit) updateData.unit = unit;
+
+  if (req.file) {
+    const imageUrl = await uploadToCloudinary(req.file.path);
+    if (imageUrl) {
+      const existingImage = await prisma.productImage.findFirst({ 
+        where: { productId, isCover: true } 
+      });
+      
+      if (existingImage) {
+        await prisma.productImage.update({
+          where: { id: existingImage.id },
+          data: { url: imageUrl },
+        });
+      } else {
+        await prisma.productImage.create({
+          data: { productId, url: imageUrl, isCover: true },
+        });
+      }
+    }
+  }
 
   const product = await prisma.product.update({
     where: { id: productId },
-    data: {
-      name:        name        || existing.name,
-      price:       price       ? parseFloat(price) : existing.price,
-      description: description ?? existing.description,
-      category:    category    || existing.category,
-      unit:        unit        || existing.unit,
-      stock:       stock !== undefined ? parseInt(stock) : existing.stock,
-      imageUrl,
-    },
+    data: updateData,
   });
 
   sendSuccess(res, product, 'Mahsulot yangilandi', 200);
@@ -165,32 +203,46 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
 // DELETE /api/distributor/products/:id
 export const deleteProduct = asyncHandler(async (req: Request, res: Response) => {
   const productId = String(req.params.id);
-  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.id } });
+  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.userId } });
   if (!dist) { res.status(403); throw new Error('Distribyutor profili topilmadi'); }
 
   const existing = await prisma.product.findFirst({ where: { id: productId, distributorId: dist.id } });
   if (!existing) { res.status(404); throw new Error('Mahsulot topilmadi'); }
 
-  await prisma.product.update({ where: { id: productId }, data: { isActive: false } });
+  await prisma.product.update({ where: { id: productId }, data: { status: 'DRAFT' } });
   sendSuccess(res, null, 'Mahsulot o\'chirildi', 200);
 });
 
 // PATCH /api/distributor/products/:id/stock
 export const updateProductStock = asyncHandler(async (req: Request, res: Response) => {
   const productId = String(req.params.id);
-  const stock = req.body.stock;
-  if (stock === undefined) { res.status(400); throw new Error('Stok kiritilishi shart'); }
+  const { quantity } = req.body;
+  if (quantity === undefined) { res.status(400); throw new Error('Stok kiritilishi shart'); }
 
-  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.id } });
+  const dist = await prisma.distributor.findUnique({ where: { userId: req.user!.userId } });
   if (!dist) { res.status(403); throw new Error('Distribyutor profili topilmadi'); }
 
   const product = await prisma.product.findFirst({ where: { id: productId, distributorId: dist.id } });
   if (!product) { res.status(404); throw new Error('Mahsulot topilmadi'); }
 
-  const updated = await prisma.product.update({
-    where: { id: productId },
-    data: { stock: parseInt(String(stock)) },
+  const inventory = await prisma.inventory.findFirst({
+    where: { productId }
   });
 
-  sendSuccess(res, updated, 'Stok yangilandi', 200);
+  if (inventory) {
+    await prisma.inventory.update({
+      where: { id: inventory.id },
+      data: { quantity: parseInt(String(quantity)) },
+    });
+  } else {
+    await prisma.inventory.create({
+      data: {
+        productId,
+        warehouseId: 'default-warehouse',
+        quantity: parseInt(String(quantity)),
+      },
+    });
+  }
+
+  sendSuccess(res, { quantity: parseInt(String(quantity)) }, 'Stok yangilandi', 200);
 });

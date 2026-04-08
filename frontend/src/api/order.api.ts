@@ -18,6 +18,6 @@ export const fetchDistributorOrdersFn = async () => {
 };
 
 export const updateOrderStatusFn = async ({ id, status }: { id: string; status: string }) => {
-  const response = await api.patch(`/distributor/orders/${id}/status`, { status });
+  const response = await api.put(`/distributor/orders/${id}/status`, { status });
   return response.data;
 };
